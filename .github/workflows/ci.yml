@@ -58,7 +58,9 @@ jobs:
             task: package
             verify: |
               mkdir -p /tmp/verify
-              tar -xJf bin/Biomelab.tar.xz -C /tmp/verify
+              # fyne tools v1.7.1 wraps the tarball in a top-level
+              # directory (fyne-io/tools#105) — strip it.
+              tar -xJf bin/Biomelab.tar.xz -C /tmp/verify --strip-components=1
               /tmp/verify/usr/local/bin/biomelab --version
           - os: macos-latest
             task: package-darwin-universal

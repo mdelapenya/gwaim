@@ -88,10 +88,16 @@ tasks:
 
   setup-fyne:
     desc: Install the fyne CLI packaging tool
+    vars:
+      FYNE_VERSION: v1.7.1
     status:
       - command -v fyne
     cmds:
-      - '{{.GO}} install fyne.io/tools/cmd/fyne@latest'
+      # Pin the fyne CLI so packaging output (tarball layout, app
+      # bundle structure) is reproducible across CI and local builds.
+      # Bump deliberately and verify the verify steps in
+      # .github/workflows/{ci,nightly,release}.yml still match.
+      - '{{.GO}} install fyne.io/tools/cmd/fyne@{{.FYNE_VERSION}}'
 
   build:
     desc: Build the biomelab binary for the current platform
