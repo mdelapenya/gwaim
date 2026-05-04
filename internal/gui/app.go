@@ -186,6 +186,7 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 		Provider: prov,
 	}
 	state.SetWorktrees(worktrees)
+	group.LinkedWorktreeCount = len(state.LinkedWorktrees())
 
 	var sbxCandidates []string
 	if len(entry.Modes) > 0 {
@@ -229,6 +230,20 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 				a.reconcileSandboxName(re, re.state.ActiveMode.SandboxName, result.SbxMatchedName)
 			}
 			re.dashboard.ApplyRefresh(result)
+
+			// Keep the left-panel worktree count in sync with refresh
+			// results so users see "tasks in flight" without opening
+			// the dashboard.
+			if result.Worktrees != nil {
+				newCount := max(len(result.Worktrees)-1, 0)
+				if newCount != re.group.LinkedWorktreeCount {
+					re.group.LinkedWorktreeCount = newCount
+					if a.repoPanel != nil {
+						a.repoPanel.rebuildList()
+					}
+				}
+			}
+
 			if result.AllSbxStatuses != nil {
 				for k, v := range result.AllSbxStatuses {
 					a.sbxStatuses[k] = v
