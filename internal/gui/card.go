@@ -310,6 +310,20 @@ func makeBadge(text string) fyne.CanvasObject {
 	return container.NewStack(bg, container.NewPadded(label))
 }
 
+// countChip renders an integer as a pill-shaped badge with a tinted
+// background. Used in the repo panel and kanban headers to surface counts at
+// a glance.
+func countChip(n int, bgColor color.Color) fyne.CanvasObject {
+	bg := canvas.NewRectangle(bgColor)
+	bg.CornerRadius = 8
+
+	label := monoText(fmt.Sprintf("%d", n), colorForeground, true)
+	label.TextSize = scaledSize(10)
+	label.Alignment = fyne.TextAlignCenter
+
+	return container.NewStack(bg, container.NewPadded(label))
+}
+
 // monoText creates a monospace canvas.Text with the given color and bold state.
 func monoText(text string, c color.Color, bold bool) *canvas.Text {
 	t := canvas.NewText(text, c)

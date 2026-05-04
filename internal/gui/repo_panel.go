@@ -13,10 +13,11 @@ import (
 
 // RepoGroup represents a registered repository with its modes.
 type RepoGroup struct {
-	Path       string
-	Name       string
-	Modes      []config.ModeEntry
-	ActiveMode int
+	Path                string
+	Name                string
+	Modes               []config.ModeEntry
+	ActiveMode          int
+	LinkedWorktreeCount int
 }
 
 // RepoPanel is the left panel showing the repository/mode list.
@@ -104,12 +105,24 @@ func (rp *RepoPanel) rebuildList() {
 		}
 
 		// Repo header (not clickable) — bold + foreground color for
-		// strong visual hierarchy over the mode sub-items.
-		header := monoText(group.Name, colorForeground, true)
-		header.TextSize = scaledSize(12)
+		// strong visual hierarchy over the mode sub-items. The optional
+		// linked-worktree count surfaces "tasks in flight" at a glance.
+		// truncMonoText (instead of monoText) shrinks long repo names to
+		// fit, so a narrow panel never triggers a horizontal scrollbar
+		// that would push the chip off-screen.
+		header := newTruncMonoText(group.Name, colorForeground, true, false)
+		header.txt.TextSize = scaledSize(12)
 		topGap := canvas.NewRectangle(colorPanelBg)
 		topGap.SetMinSize(fyne.NewSize(0, 4))
-		rp.list.Add(container.NewVBox(topGap, header))
+
+		var headerRow fyne.CanvasObject = header
+		if group.LinkedWorktreeCount > 0 {
+			// Chip on the right edge, header in the center so the chip
+			// claims its natural width first and the header truncates
+			// into whatever space is left.
+			headerRow = container.NewBorder(nil, nil, nil, worktreeCountChip(group.LinkedWorktreeCount), header)
+		}
+		rp.list.Add(container.NewVBox(topGap, headerRow))
 
 		// Mode entries (clickable).
 		for mi, mode := range group.Modes {
@@ -184,4 +197,13 @@ func (rp *RepoPanel) buildModeLine(mode config.ModeEntry, isActive bool) fyne.Ca
 		return container.NewStack(bg, container.NewPadded(row))
 	}
 	return row
+}
+
+// worktreeCountChip renders the linked-worktree count as a pill-shaped badge
+// aligned to the right edge of the repo header. The trailing spacer keeps the
+// chip away from the panel/scrollbar edge.
+func worktreeCountChip(n int) fyne.CanvasObject {
+	rightPad := canvas.NewRectangle(colorPanelBg)
+	rightPad.SetMinSize(fyne.NewSize(8, 0))
+	return container.NewHBox(countChip(n, colorSelection), rightPad)
 }

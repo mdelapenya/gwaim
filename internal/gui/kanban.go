@@ -333,13 +333,16 @@ func (d *Dashboard) buildKanbanView() fyne.CanvasObject {
 		accentColor := kanbanColumnColor(si)
 
 		// ── Header (pinned, stronger tint) ──────────────────────────────
-		headerText := fmt.Sprintf("%s  %d", kanbanColumnTitles[si], len(stageIndices))
-		headerLabel := monoText(headerText, accentColor, true)
-		headerLabel.TextSize = scaledSize(11)
+		// Title on the left, count chip on the right. Chip uses the
+		// column's accent color so it pops against the muted header bg.
+		titleLabel := monoText(kanbanColumnTitles[si], accentColor, true)
+		titleLabel.TextSize = scaledSize(11)
+
+		headerRow := container.NewBorder(nil, nil, nil, countChip(len(stageIndices), accentColor), titleLabel)
 
 		headerBg := canvas.NewRectangle(kanbanColumnHeaderBgColor(si))
 		headerBg.CornerRadius = 4
-		header := container.NewStack(headerBg, container.NewPadded(headerLabel))
+		header := container.NewStack(headerBg, container.NewPadded(headerRow))
 		headerSection := container.NewVBox(header, widget.NewSeparator())
 
 		// ── Cards (vertically scrollable, width-constrained) ─────────────
