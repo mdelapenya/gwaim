@@ -1,12 +1,14 @@
 package gui
 
 import (
+	"net/url"
 	"time"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
@@ -56,6 +58,11 @@ type App struct {
 	termDetector    *terminal.Detector
 	procLister      process.Lister
 	refreshInterval time.Duration
+
+	// warnSbxMissing is set during buildContent when at least one configured
+	// repo uses sandbox mode but the sbx CLI is not on PATH. Run() shows a
+	// one-shot informational dialog after the window appears.
+	warnSbxMissing bool
 
 	focus        focusPanel
 	dialogOpen   bool
@@ -121,7 +128,27 @@ func (a *App) Run() {
 	// SetCloseIntercept is set inside setupSystemTray.
 	a.setupSystemTray()
 
+	if a.warnSbxMissing {
+		// fyne.Do queues onto the UI thread; the queued work fires once
+		// ShowAndRun starts the event loop, so the dialog appears over the
+		// freshly painted window.
+		go fyne.Do(a.showSbxMissingDialog)
+	}
+
 	a.window.ShowAndRun()
+}
+
+func (a *App) showSbxMissingDialog() {
+	installURL, _ := url.Parse(sbxInstallURL)
+	content := container.NewVBox(
+		widget.NewLabel("One or more configured repositories use sandbox mode,"),
+		widget.NewLabel("but the sbx CLI was not found in PATH."),
+		widget.NewLabel("Sandbox actions will fail until you install it."),
+		widget.NewHyperlink("Install sbx", installURL),
+	)
+	d := dialog.NewCustom("Sandbox CLI Missing", "OK", content, a.window)
+	d.Resize(dialogMinSize)
+	d.Show()
 }
 
 func (a *App) buildContent() fyne.CanvasObject {
@@ -136,6 +163,18 @@ func (a *App) buildContent() fyne.CanvasObject {
 		statusMap := sandbox.CheckAllStatuses()
 		for k, v := range statusMap {
 			a.sbxStatuses[k] = v
+		}
+	} else {
+		for _, entry := range cfg.Repos {
+			for _, m := range entry.Modes {
+				if m.Type == "sandbox" {
+					a.warnSbxMissing = true
+					break
+				}
+			}
+			if a.warnSbxMissing {
+				break
+			}
 		}
 	}
 

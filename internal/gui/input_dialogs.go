@@ -1,11 +1,17 @@
 package gui
 
 import (
+	"net/url"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/mdelapenya/biomelab/internal/sandbox"
 )
+
+const sbxInstallURL = "https://docs.docker.com/ai/sandboxes/"
 
 func showBranchInput(parent fyne.Window, onDone func(), onSubmit func(name string)) dialog.Dialog {
 	entry := widget.NewEntry()
@@ -70,17 +76,30 @@ func showAddRepoInput(parent fyne.Window, onDone func(), onSubmit func(path stri
 func showModeSelection(parent fyne.Window, onDone func(), onRegular func(), onSandbox func()) dialog.Dialog {
 	var d dialog.Dialog
 
+	sbxAvailable := sandbox.Available()
+	sbxBtn := widget.NewButton("Sandbox (recommended)", func() {
+		d.Hide()
+		onSandbox()
+	})
+
 	content := container.NewVBox(
 		widget.NewLabel("Select mode:"),
-		widget.NewButton("Sandbox (recommended)", func() {
-			d.Hide()
-			onSandbox()
-		}),
-		widget.NewButton("Regular (host)", func() {
-			d.Hide()
-			onRegular()
-		}),
+		sbxBtn,
 	)
+
+	if !sbxAvailable {
+		sbxBtn.Disable()
+		installURL, _ := url.Parse(sbxInstallURL)
+		content.Add(container.NewHBox(
+			widget.NewLabel("sbx CLI not found in PATH —"),
+			widget.NewHyperlink("install sbx", installURL),
+		))
+	}
+
+	content.Add(widget.NewButton("Regular (host)", func() {
+		d.Hide()
+		onRegular()
+	}))
 
 	d = dialog.NewCustom("Select Mode", "Cancel", content, parent)
 	d.SetOnClosed(func() {
