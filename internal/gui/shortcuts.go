@@ -826,6 +826,9 @@ func (a *App) handleCreateOrEnrollSandbox() {
 	}
 
 	// Non-sandbox → enroll by asking for agent name.
+	if !a.requireSbxInstalled() {
+		return
+	}
 	done := a.openDialog()
 	showAgentInput(a.window, done, func(agentName string) {
 		sbxName := sandbox.SanitizeName(re.group.Name, agentName)
@@ -834,7 +837,7 @@ func (a *App) handleCreateOrEnrollSandbox() {
 			err := sandbox.Preflight()
 			fyne.Do(func() {
 				if err != nil {
-					a.setStatus("Sandbox not ready — run: sbx ls", true)
+					a.setStatus(err.Error(), true)
 					return
 				}
 				cfg, _ := config.Load(a.configPath)
@@ -859,9 +862,24 @@ func (a *App) handleCreateOrEnrollSandbox() {
 	})
 }
 
+// requireSbxInstalled returns true if the sbx CLI is on PATH; otherwise it
+// reports the canonical install message via setStatus and returns false.
+// Use it to short-circuit flows that would otherwise open an agent picker
+// only to fail at Preflight.
+func (a *App) requireSbxInstalled() bool {
+	if sandbox.Available() {
+		return true
+	}
+	a.setStatus("sbx CLI not found in PATH — install it from "+sbxInstallURL, true)
+	return false
+}
+
 func (a *App) handleAddSandboxMode() {
 	re := a.activeRepo()
 	if re == nil {
+		return
+	}
+	if !a.requireSbxInstalled() {
 		return
 	}
 	done := a.openDialog()
@@ -872,7 +890,7 @@ func (a *App) handleAddSandboxMode() {
 			err := sandbox.Preflight()
 			fyne.Do(func() {
 				if err != nil {
-					a.setStatus("Sandbox not ready — run: sbx ls", true)
+					a.setStatus(err.Error(), true)
 					return
 				}
 				cfg, _ := config.Load(a.configPath)
@@ -894,7 +912,7 @@ func (a *App) doCreateSandboxWithPreflight(re *repoEntry, sbxName, sbxAgent, rep
 	go func() {
 		err := sandbox.Preflight()
 		if err != nil {
-			fyne.Do(func() { a.setStatus("Sandbox not ready — run: sbx ls", true) })
+			fyne.Do(func() { a.setStatus(err.Error(), true) })
 			return
 		}
 		args := sandbox.CreateArgs(sbxName, sbxAgent, repoPath)
@@ -938,7 +956,7 @@ func (a *App) handleAddRepo() {
 					err := sandbox.Preflight()
 					fyne.Do(func() {
 						if err != nil {
-							a.setStatus("Sandbox not ready — run: sbx ls", true)
+							a.setStatus(err.Error(), true)
 							return
 						}
 						a.addRepoToConfig(repoRoot, repo.RepoName(), mode)

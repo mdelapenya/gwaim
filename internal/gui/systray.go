@@ -2,6 +2,7 @@ package gui
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -51,11 +52,18 @@ func (a *App) setupSystemTray() {
 		}
 	})
 
+	sbxDocsItem := fyne.NewMenuItem("Docker Sandboxes docs", func() {
+		if u, err := url.Parse(sbxInstallURL); err == nil {
+			_ = a.fyneApp.OpenURL(u)
+		}
+	})
+
 	a.trayMenu = fyne.NewMenu("biomelab",
 		toggleItem,
 		fyne.NewMenuItemSeparator(),
 		themeItem,
 		configItem,
+		sbxDocsItem,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() {
 			a.stopAllRefresh()
