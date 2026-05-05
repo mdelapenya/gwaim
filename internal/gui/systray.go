@@ -1,8 +1,16 @@
 package gui
 
 import (
+	"errors"
+	"os"
+	"os/exec"
+	"runtime"
+
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
+
+	"github.com/mdelapenya/biomelab/internal/config"
 )
 
 // setupSystemTray creates a system tray icon with Show/Hide toggle, Theme
@@ -37,10 +45,17 @@ func (a *App) setupSystemTray() {
 	themeItem := fyne.NewMenuItem("Theme", nil)
 	themeItem.ChildMenu = fyne.NewMenu("", a.trayThemeLight, a.trayThemeDark)
 
+	configItem := fyne.NewMenuItem("Show Config", func() {
+		if err := a.openConfigFile(); err != nil {
+			dialog.ShowError(err, a.window)
+		}
+	})
+
 	a.trayMenu = fyne.NewMenu("biomelab",
 		toggleItem,
 		fyne.NewMenuItemSeparator(),
 		themeItem,
+		configItem,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() {
 			a.stopAllRefresh()
@@ -56,6 +71,32 @@ func (a *App) setupSystemTray() {
 		toggleItem.Label = "Show"
 		desk.SetSystemTrayMenu(a.trayMenu)
 	})
+}
+
+// openConfigFile opens the config file with the system's default application.
+// If the file does not exist yet (fresh install), an empty config is written
+// first so the editor has something to open.
+func (a *App) openConfigFile() error {
+	if _, err := os.Stat(a.configPath); errors.Is(err, os.ErrNotExist) {
+		if err := config.Save(a.configPath, &config.Config{}); err != nil {
+			return err
+		}
+	}
+	return openInSystem(a.configPath)
+}
+
+// openInSystem opens path with the OS default handler.
+func openInSystem(path string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", path)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", path)
+	default:
+		cmd = exec.Command("xdg-open", path)
+	}
+	return cmd.Start()
 }
 
 func (a *App) stopAllRefresh() {
