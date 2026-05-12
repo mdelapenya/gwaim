@@ -1211,7 +1211,24 @@ func (a *App) handleRemoveMode() {
 		}
 		_ = config.Save(a.configPath, cfg)
 
-		dialog.ShowInformation("Mode Removed", modeLabel+" removed.\nRestart biomelab to update.", a.window)
+		idx := cfg.IndexOf(re.group.Path)
+		if idx < 0 {
+			return
+		}
+		re.group.Modes = cfg.Repos[idx].Modes
+		newMi := mi
+		if newMi >= len(re.group.Modes) {
+			newMi = len(re.group.Modes) - 1
+		}
+		if newMi < 0 {
+			newMi = 0
+		}
+		if a.repoPanel != nil {
+			a.repoPanel.groups = a.collectGroups()
+			a.repoPanel.rebuildList()
+		}
+		a.switchMode(a.active, newMi)
+		a.setStatus(modeLabel+" removed", false)
 	})
 }
 
