@@ -31,11 +31,20 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 	// Escape dismisses open dialogs via their Hide() method.
 	// This triggers Fyne's proper cleanup (unlike manual overlay removal
 	// which corrupts the canvas state and breaks SetOnKeyDown).
+	//
+	// IMPORTANT: Fyne's dialog.ConfirmDialog.Hide() does NOT invoke the
+	// user-provided func(ok bool) callback when called programmatically
+	// (only button clicks fire it). That means the openDialog() cleanup
+	// closure — which sets dialogOpen=false and unfocuses the canvas — is
+	// never reached on an Escape dismissal. We mirror the cleanup here so
+	// the next keypress isn't swallowed by a stale dialogOpen guard.
 	if a.dialogOpen && key == fyne.KeyEscape {
 		if a.activeDialog != nil {
 			a.activeDialog.Hide()
 			a.activeDialog = nil
 		}
+		a.dialogOpen = false
+		a.window.Canvas().Unfocus()
 		return
 	}
 	if a.dialogOpen {
