@@ -58,6 +58,7 @@ type SandboxCardInfo struct {
 	Agent         string
 	ClientVersion string
 	ServerVersion string
+	Kits          []config.KitInstall
 }
 
 // SetWorktrees stores worktrees and sorts linked ones alphabetically by branch.

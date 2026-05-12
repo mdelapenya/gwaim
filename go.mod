@@ -7,6 +7,8 @@ require (
 	github.com/go-git/go-billy/v6 v6.0.0-20260226131633-45bd0956d66f
 	github.com/go-git/go-git/v6 v6.0.0-20260320111621-ea91339c5263
 	github.com/shirou/gopsutil/v4 v4.26.2
+	golang.org/x/sync v0.19.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -57,8 +59,6 @@ require (
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

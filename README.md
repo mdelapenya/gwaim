@@ -106,8 +106,8 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 
 | Key | Action |
 |-----|--------|
-| `↑` / `k` | Previous mode |
-| `↓` / `j` | Next mode |
+| `↑` | Previous mode |
+| `↓` | Next mode |
 | `a` | Add repository |
 | `n` | New sandbox mode for selected repo |
 | `x` | Remove selected mode |
@@ -118,10 +118,10 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 
 | Key | Action | Context |
 |-----|--------|---------|
-| `↑` / `k` | Navigate up (by row in grid) | Any card |
-| `↓` / `j` | Navigate down (by row in grid) | Any card |
-| `←` / `h` | Navigate left | Linked cards |
-| `→` / `l` | Navigate right | Linked cards |
+| `↑` | Navigate up (by row in grid) | Any card |
+| `↓` | Navigate down (by row in grid) | Any card |
+| `←` | Navigate left | Linked cards |
+| `→` | Navigate right | Linked cards |
 | `Enter` | Activate existing terminal or open new | Any card |
 | `e` | Open in editor | Any card |
 | `c` | Create worktree | Main card |
@@ -133,6 +133,7 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 | `n` | Create/enroll sandbox | Main card |
 | `s` | Start stopped sandbox | Main card |
 | `Shift+S` | Stop running sandbox | Main card |
+| `k` | Pick kits → create (if missing) or recreate sandbox with `--kit` flags | Sandbox mode |
 | `Ctrl+=` | Zoom in | Global |
 | `Ctrl+-` | Zoom out | Global |
 | `Ctrl+0` | Reset zoom | Global |

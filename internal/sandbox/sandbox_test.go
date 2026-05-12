@@ -6,11 +6,28 @@ import (
 )
 
 func TestCreateArgs(t *testing.T) {
-	got := CreateArgs("my-sandbox", "claude", "/tmp/repo")
-	want := []string{"sbx", "create", "--name", "my-sandbox", "claude", "/tmp/repo"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("CreateArgs() = %v, want %v", got, want)
-	}
+	t.Run("no kits", func(t *testing.T) {
+		got := CreateArgs("my-sandbox", "claude", "/tmp/repo", nil)
+		want := []string{"sbx", "create", "--name", "my-sandbox", "claude", "/tmp/repo"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("CreateArgs() = %v, want %v", got, want)
+		}
+	})
+	t.Run("with kits", func(t *testing.T) {
+		got := CreateArgs("my-sandbox", "claude", "/tmp/repo", []string{
+			"git+https://example.com#dir=a",
+			"git+https://example.com#dir=b",
+		})
+		want := []string{
+			"sbx", "create", "--name", "my-sandbox",
+			"--kit", "git+https://example.com#dir=a",
+			"--kit", "git+https://example.com#dir=b",
+			"claude", "/tmp/repo",
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("CreateArgs() = %v, want %v", got, want)
+		}
+	})
 }
 
 func TestRunDetachedWithBranchArgs(t *testing.T) {

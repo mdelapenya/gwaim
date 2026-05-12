@@ -137,7 +137,7 @@ func (d *Dashboard) Content() fyne.CanvasObject {
 // Must be called on the main thread (via fyne.Do).
 func (d *Dashboard) ApplyRefresh(result ops.RefreshResult) {
 	if result.Err != nil {
-		d.state.StatusMessage = result.Err.Error()
+		d.state.StatusMessage = ops.FirstNonEmptyLine(result.Err.Error())
 		d.state.StatusIsError = true
 		return
 	}
@@ -184,8 +184,11 @@ func (d *Dashboard) ApplyRefresh(result ops.RefreshResult) {
 	if result.SbxServerVer != "" {
 		d.state.SbxServerVersion = result.SbxServerVer
 	}
-	d.state.StatusMessage = ""
-	d.state.StatusIsError = false
+	// NOTE: StatusMessage is intentionally NOT cleared on a successful
+	// refresh. Refreshes happen every couple of seconds; clearing here
+	// wipes user-action messages ("Created X", "Pull complete", CLI
+	// errors) almost immediately. Status stays until another setStatus
+	// call or an Esc dismisses it.
 
 	d.Rebuild()
 }
@@ -297,11 +300,11 @@ func (d *Dashboard) build() fyne.CanvasObject {
 	if sbxInfo != nil {
 		switch sbxInfo.Status {
 		case sandbox.StatusRunning:
-			helpStr += "  [S] stop  [d] del sandbox"
+			helpStr += "  [S] stop  [k] recreate w/ kits  [d] del sandbox"
 		case sandbox.StatusStopped:
-			helpStr += "  [s] start  [d] del sandbox"
+			helpStr += "  [s] start  [k] recreate w/ kits  [d] del sandbox"
 		case sandbox.StatusNotFound:
-			helpStr += "  [n] create sandbox"
+			helpStr += "  [n] create sandbox  [k] create w/ kits"
 		}
 	}
 	helpColor := colorDimGray
@@ -425,5 +428,6 @@ func (d *Dashboard) sandboxInfo() *SandboxCardInfo {
 		Agent:         mode.Agent,
 		ClientVersion: d.state.SbxClientVersion,
 		ServerVersion: d.state.SbxServerVersion,
+		Kits:          mode.Kits,
 	}
 }
