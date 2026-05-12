@@ -1239,3 +1239,43 @@ func (a *App) collectGroups() []*RepoGroup {
 	}
 	return groups
 }
+
+// reorderRepos moves the repo at fromIdx to toIdx in both the in-memory slice
+// and the persisted config, keeping a.active pointing at the same repo entry.
+// Triggered by the repo panel's drag-and-drop callback.
+func (a *App) reorderRepos(fromIdx, toIdx int) {
+	if fromIdx < 0 || fromIdx >= len(a.repos) || toIdx < 0 || toIdx >= len(a.repos) || fromIdx == toIdx {
+		return
+	}
+
+	re := a.repos[fromIdx]
+	if fromIdx < toIdx {
+		copy(a.repos[fromIdx:toIdx], a.repos[fromIdx+1:toIdx+1])
+	} else {
+		copy(a.repos[toIdx+1:fromIdx+1], a.repos[toIdx:fromIdx])
+	}
+	a.repos[toIdx] = re
+
+	// Keep a.active pointing at the same repo entry after the shuffle.
+	switch {
+	case a.active == fromIdx:
+		a.active = toIdx
+	case fromIdx < a.active && toIdx >= a.active:
+		a.active--
+	case fromIdx > a.active && toIdx <= a.active:
+		a.active++
+	}
+
+	if a.repoPanel != nil {
+		a.repoPanel.groups = a.collectGroups()
+		a.repoPanel.SetActive(a.active, a.repos[a.active].group.ActiveMode)
+	}
+
+	cfg, err := config.Load(a.configPath)
+	if err != nil {
+		return
+	}
+	if cfg.Move(fromIdx, toIdx) {
+		_ = config.Save(a.configPath, cfg)
+	}
+}

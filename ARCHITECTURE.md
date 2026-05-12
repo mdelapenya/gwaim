@@ -18,6 +18,7 @@ internal/
     dashboard.go       Right panel: main card + scrollable linked cards grid, refresh timestamps
     card.go            Worktree card rendering: branch, path, PR, agents, IDEs, status
     repo_panel.go      Left panel: tappable VBox of repo/mode items (NOT widget.Tree)
+    repo_panel_drag.go Drag-handle widget + reorder math for repo panel
     shortcuts.go       All keyboard handling: handleKeyName + handleRune, navigation, operations
     keycapture.go      desktop.Canvas.SetOnKeyDown setup, zoom shortcuts
     dialogs.go         Confirmation dialogs (delete, sandbox create/remove, send PR flow)

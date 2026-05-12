@@ -264,6 +264,97 @@ func TestRemove(t *testing.T) {
 	}
 }
 
+func TestMove(t *testing.T) {
+	newCfg := func() *Config {
+		return &Config{
+			Repos: []RepoEntry{
+				{Path: "/a", Name: "a"},
+				{Path: "/b", Name: "b"},
+				{Path: "/c", Name: "c"},
+				{Path: "/d", Name: "d"},
+			},
+		}
+	}
+
+	paths := func(cfg *Config) []string {
+		out := make([]string, len(cfg.Repos))
+		for i, r := range cfg.Repos {
+			out[i] = r.Path
+		}
+		return out
+	}
+
+	t.Run("move down", func(t *testing.T) {
+		cfg := newCfg()
+		if !cfg.Move(0, 2) {
+			t.Fatal("expected change")
+		}
+		want := []string{"/b", "/c", "/a", "/d"}
+		if got := paths(cfg); !equalStrings(got, want) {
+			t.Errorf("paths = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("move up", func(t *testing.T) {
+		cfg := newCfg()
+		if !cfg.Move(3, 1) {
+			t.Fatal("expected change")
+		}
+		want := []string{"/a", "/d", "/b", "/c"}
+		if got := paths(cfg); !equalStrings(got, want) {
+			t.Errorf("paths = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("move to head", func(t *testing.T) {
+		cfg := newCfg()
+		cfg.Move(2, 0)
+		want := []string{"/c", "/a", "/b", "/d"}
+		if got := paths(cfg); !equalStrings(got, want) {
+			t.Errorf("paths = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("move to tail", func(t *testing.T) {
+		cfg := newCfg()
+		cfg.Move(1, 3)
+		want := []string{"/a", "/c", "/d", "/b"}
+		if got := paths(cfg); !equalStrings(got, want) {
+			t.Errorf("paths = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("no-op when from == to", func(t *testing.T) {
+		cfg := newCfg()
+		if cfg.Move(1, 1) {
+			t.Fatal("expected no change")
+		}
+	})
+
+	t.Run("out of range is no-op", func(t *testing.T) {
+		cfg := newCfg()
+		if cfg.Move(-1, 0) || cfg.Move(0, -1) || cfg.Move(0, 4) || cfg.Move(4, 0) {
+			t.Fatal("expected no change for out-of-range indices")
+		}
+		want := []string{"/a", "/b", "/c", "/d"}
+		if got := paths(cfg); !equalStrings(got, want) {
+			t.Errorf("paths = %v, want %v", got, want)
+		}
+	})
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestIndexOf(t *testing.T) {
 	cfg := &Config{
 		Repos: []RepoEntry{

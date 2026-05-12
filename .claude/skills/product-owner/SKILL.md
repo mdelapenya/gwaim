@@ -298,7 +298,19 @@ If biomelab is launched from inside a git repository, that repo is automatically
 registered in regular mode. If launched from a non-git directory, biomelab shows
 an empty state with instructions to add a repo.
 
-### 18. Kanban Board View
+### 18. Reorder Repositories (drag handle)
+
+Each repo header in the left panel shows a small burger icon (`☰`) to the left
+of its name. Drag that icon vertically to move the repo up or down in the list.
+While dragging, a coloured bar marks the drop target between groups. Releasing
+the mouse commits the new order, persists it to `repos.json`, and keeps the
+previously-selected mode active under the same repo.
+
+Only the burger icon is draggable. Clicks on the repo name and its mode lines
+remain ordinary taps for selection. The hover cursor over the handle changes
+to a vertical-resize indicator to signal grab affordance.
+
+### 19. Kanban Board View
 
 The default view groups linked worktrees into four columns by PR/MR lifecycle stage:
 
@@ -718,3 +730,16 @@ worktree path would be falsely reported as a terminal. The upward walk ensures
 only shells that descend from Terminal.app, iTerm2, Alacritty, etc. are counted.
 The emulator pattern list is ordered so that specific names (e.g. "iterm2")
 match before broad ones (e.g. "terminal").
+
+### DL-025: Dedicated drag handle for repo reordering
+
+**Decision:** Repo reordering is triggered only by dragging the small burger
+icon (`☰`) on the left of each repo header. The rest of the header row — repo
+name, worktree-count chip, and the mode lines beneath — stays non-draggable.
+
+**Why:** Making the entire header row draggable risks accidental reorders when
+users click between modes or tap near the chip. A dedicated handle creates a
+clear, intentional gesture; the icon plus a vertical-resize cursor on hover
+signals "grab here to move this row" without overloading other row
+interactions. Keeping the handle small also avoids confusing it with the
+worktree-count chip on the right edge.
