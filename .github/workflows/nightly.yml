@@ -142,19 +142,18 @@ jobs:
         run: |
           # Delete every *-nightly release so a stable version bump doesn't
           # leave the previous BASE's nightly orphaned.
-          existing=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -- '-nightly$' || true)
-          for tag in $existing; do
-            echo "Deleting release and tag: $tag"
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -- '-nightly$' || true); do
+            echo "Deleting release: $tag"
             gh release delete "$tag" --yes --cleanup-tag || true
-            git push origin ":refs/tags/$tag" 2>/dev/null || true
           done
-
-      - name: Create nightly tag
-        env:
-          NIGHTLY_TAG: ${{ steps.nightly.outputs.tag }}
-        run: |
-          git tag "${NIGHTLY_TAG}"
-          git push origin "${NIGHTLY_TAG}"
+          # Also delete orphan *-nightly tags from remote. These accumulate
+          # when a previous run pushed the tag but `gh release create`
+          # failed afterwards (e.g. a transient GitHub 504). The release
+          # loop above can't see them — they have no release attached.
+          for tag in $(git ls-remote --tags origin | awk '{print $2}' | sed 's#refs/tags/##' | grep -- '-nightly$' || true); do
+            echo "Deleting orphan tag: $tag"
+            git push origin ":refs/tags/$tag" || true
+          done
 
       - name: Create nightly release
         env:
@@ -163,7 +162,11 @@ jobs:
           BASE_TAG: ${{ steps.nightly.outputs.base }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
+          # `gh release create` creates the tag on `--target` atomically
+          # with the release itself. If this step fails (504, rate limit,
+          # etc.) no tag is left behind, so the next run starts clean.
           gh release create "${NIGHTLY_TAG}" \
+            --target "$(git rev-parse HEAD)" \
             --title "Nightly Build (${SHORT_SHA})" \
             --prerelease \
             --generate-notes \
