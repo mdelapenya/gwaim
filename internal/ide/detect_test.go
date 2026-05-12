@@ -255,6 +255,35 @@ func TestDetect_TwoIndependentVSCodeWindows(t *testing.T) {
 	}
 }
 
+func TestDetect_FiltersCLILauncherZombies(t *testing.T) {
+	// macOS leaves behind `code <path>` CLI launchers as zombie pairs:
+	// a bash wrapper at /opt/homebrew/bin/code → a Code process running
+	// .../app/out/cli.js <path>. They IPC to the real window and never
+	// exit, polluting detection with N stale "vscode" entries per
+	// worktree. We must filter them out and keep only the real window.
+	lister := &mockLister{
+		procs: []process.Info{
+			// Real VS Code window.
+			{PID: 50, PPID: 1, Name: "Code", Cmdline: "/Applications/Visual Studio Code.app/Contents/MacOS/Code", Cwd: "/project"},
+			{PID: 51, PPID: 50, Name: "Code Helper (Renderer)", Cmdline: "Code Helper /project", Cwd: "/"},
+			// Three CLI launcher zombies from repeated `code /project` calls.
+			{PID: 100, PPID: 1, Name: "Code", Cmdline: "/Applications/Visual Studio Code.app/Contents/MacOS/Code /Applications/Visual Studio Code.app/Contents/Resources/app/out/cli.js /project", Cwd: "/"},
+			{PID: 200, PPID: 1, Name: "Code", Cmdline: "/Applications/Visual Studio Code.app/Contents/MacOS/Code /Applications/Visual Studio Code.app/Contents/Resources/app/out/cli.js /project", Cwd: "/"},
+			{PID: 300, PPID: 1, Name: "Code", Cmdline: "/Applications/Visual Studio Code.app/Contents/MacOS/Code /Applications/Visual Studio Code.app/Contents/Resources/app/out/cli.js /project", Cwd: "/"},
+		},
+	}
+
+	d := NewDetectorWithLister(lister)
+	result := d.Detect([]string{"/project"})
+
+	if len(result["/project"]) != 1 {
+		t.Fatalf("expected 1 IDE (real window only, cli.js zombies filtered), got %d", len(result["/project"]))
+	}
+	if result["/project"][0].PID != 50 {
+		t.Errorf("expected real-window root PID 50, got %d", result["/project"][0].PID)
+	}
+}
+
 func TestDetect_NestedHelpers(t *testing.T) {
 	// Some helpers spawn sub-helpers (e.g. Renderer spawns a child Renderer).
 	// They should all roll up to the same root.

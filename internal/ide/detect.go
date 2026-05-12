@@ -52,6 +52,15 @@ func (d *Detector) DetectFromProcesses(procs []process.Info, worktreePaths []str
 
 	var ides []ideProc
 	for _, p := range procs {
+		// Electron-based IDEs (VS Code, Cursor) leave behind CLI-launcher
+		// processes after `code <path>`/`cursor <path>` runs. They invoke
+		// `<App>/Contents/Resources/app/out/cli.js` to handoff to the
+		// running window via IPC and then linger as zombies. They are NOT
+		// the IDE window — skip them so each worktree shows one entry per
+		// real window instead of N stale CLI handlers.
+		if strings.Contains(p.Cmdline, "/out/cli.js") {
+			continue
+		}
 		name := strings.ToLower(filepath.Base(p.Name))
 		matched := false
 		for _, pp := range ProcessPatterns {
