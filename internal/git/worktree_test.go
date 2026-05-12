@@ -371,6 +371,83 @@ func TestRemoveWorktree_WithSlashedBranch(t *testing.T) {
 	}
 }
 
+// TestRemoveWorktree_GUIPath_SlashedBranch mirrors what the GUI does on
+// delete: list worktrees, take Worktree.Name (the .git/worktrees/<name>
+// entry — sanitized), and pass it to RemoveWorktree. The bug this guards
+// against is the caller passing wt.Branch (e.g. "ralph/issue-1456"), which
+// silently no-ops because no metadata dir exists by that name.
+func TestRemoveWorktree_GUIPath_SlashedBranch(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+
+	wtName := "ralph-issue-1456"
+	branchName := "ralph/issue-1456"
+	wtPath := setupWorktreeManually(t, dir, wtName, branchName)
+	t.Cleanup(func() { _ = os.RemoveAll(wtPath) })
+
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("failed to open: %v", err)
+	}
+
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees failed: %v", err)
+	}
+	var target *Worktree
+	for i := range wts {
+		if wts[i].Branch == branchName {
+			target = &wts[i]
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("worktree with branch %q not found", branchName)
+	}
+	if target.Name != wtName {
+		t.Fatalf("Worktree.Name = %q, want %q", target.Name, wtName)
+	}
+
+	if err := repo.RemoveWorktree(target.Name); err != nil {
+		t.Fatalf("RemoveWorktree failed: %v", err)
+	}
+
+	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
+		t.Errorf("worktree directory %q still exists", wtPath)
+	}
+	metaDir := filepath.Join(dir, ".git", "worktrees", wtName)
+	if _, err := os.Stat(metaDir); !os.IsNotExist(err) {
+		t.Errorf("metadata directory %q still exists", metaDir)
+	}
+	branchRef := filepath.Join(dir, ".git", "refs", "heads", branchName)
+	if _, err := os.Stat(branchRef); !os.IsNotExist(err) {
+		t.Errorf("branch ref %q still exists", branchRef)
+	}
+
+	wts, err = repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees failed: %v", err)
+	}
+	for _, wt := range wts {
+		if wt.Branch == branchName {
+			t.Errorf("worktree with branch %q still present after removal", branchName)
+		}
+	}
+}
+
+// TestRemoveWorktree_UnknownName guards against the previous silent-success
+// behaviour: removing a name that has no metadata dir must error so the GUI
+// can surface it instead of leaving a ghost card on screen.
+func TestRemoveWorktree_UnknownName(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("failed to open: %v", err)
+	}
+	if err := repo.RemoveWorktree("does-not-exist"); err == nil {
+		t.Fatal("expected error for unknown worktree name, got nil")
+	}
+}
+
 func TestRemoveWorktree_Simple(t *testing.T) {
 	dir, _ := setupTestRepo(t)
 

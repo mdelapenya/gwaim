@@ -603,7 +603,7 @@ func (a *App) handleDeleteOrRemoveSandbox() {
 	done := a.openDialog()
 	a.activeDialog = showConfirmDelete(a.window, wt.Branch, done, func() {
 		go func() {
-			err := ops.RemoveWorktree(re.repo, wt.Branch)
+			err := ops.RemoveWorktree(re.repo, wt.Name)
 			fyne.Do(func() {
 				if err != nil {
 					a.setStatus(err.Error(), true)
