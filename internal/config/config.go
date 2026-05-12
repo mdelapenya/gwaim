@@ -269,6 +269,24 @@ func (c *Config) SetSandboxKits(path, sandboxName string, kits []KitInstall) boo
 	return false
 }
 
+// Move repositions the repo at fromIdx to toIdx, shifting the others to fill
+// the gap. Returns true if the order changed. Out-of-range or equal indices
+// are no-ops.
+func (c *Config) Move(fromIdx, toIdx int) bool {
+	n := len(c.Repos)
+	if fromIdx < 0 || fromIdx >= n || toIdx < 0 || toIdx >= n || fromIdx == toIdx {
+		return false
+	}
+	r := c.Repos[fromIdx]
+	if fromIdx < toIdx {
+		copy(c.Repos[fromIdx:toIdx], c.Repos[fromIdx+1:toIdx+1])
+	} else {
+		copy(c.Repos[toIdx+1:fromIdx+1], c.Repos[toIdx:fromIdx])
+	}
+	c.Repos[toIdx] = r
+	return true
+}
+
 // Remove removes a repo entry by path (all modes).
 // Returns true if the entry was found and removed.
 func (c *Config) Remove(path string) bool {

@@ -389,6 +389,7 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 		a.focus = focusLeft // clicking the tree means left panel has focus
 		a.switchMode(gi, mi)
 	}
+	a.repoPanel.OnReorder = a.reorderRepos
 
 	// Active dashboard (right side).
 	a.active = 0
