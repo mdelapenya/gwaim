@@ -1052,8 +1052,99 @@ func (a *App) handleRemoveMode() {
 		}
 		_ = config.Save(a.configPath, cfg)
 
-		dialog.ShowInformation("Mode Removed", modeLabel+" removed.\nRestart biomelab to update.", a.window)
+		a.reloadRepoFromConfig(re.group.Path)
 	})
+}
+
+// reloadRepoFromConfig re-syncs the repo at repoPath with the on-disk config.
+// Used after a mode is removed so users see the change immediately instead of
+// being told to restart the app. Three outcomes:
+//   - Repo gone from cfg: drop it from a.repos and swap to another repo
+//     (or the empty state when none remain).
+//   - Repo still present: refresh its mode list, fall back to mode 0 if the
+//     previously-active mode disappeared, and re-run switchMode to rebuild
+//     state/refresh-manager wiring (e.g. sandbox candidates clearing on a
+//     sandbox→regular transition).
+//   - Repo not currently in the UI: no-op.
+func (a *App) reloadRepoFromConfig(repoPath string) {
+	cfg, err := config.Load(a.configPath)
+	if err != nil {
+		return
+	}
+
+	repoIdx := -1
+	for i, re := range a.repos {
+		if re.group.Path == repoPath {
+			repoIdx = i
+			break
+		}
+	}
+	if repoIdx < 0 {
+		return
+	}
+
+	cfgIdx := cfg.IndexOf(repoPath)
+	if cfgIdx < 0 {
+		a.removeRepoFromUI(repoIdx)
+		return
+	}
+
+	re := a.repos[repoIdx]
+	re.group.Modes = cfg.Repos[cfgIdx].Modes
+
+	newMode := re.group.ActiveMode
+	if newMode >= len(re.group.Modes) {
+		newMode = 0
+	}
+
+	// Force switchMode to re-apply all state by clearing active first. The
+	// guard in switchMode (active >= 0 && active < len(a.repos)) skips the
+	// pause step when active is -1, so we Pause manually for the repo whose
+	// modes just changed and let switchMode resume it.
+	if a.active == repoIdx {
+		re.refreshMgr.Pause()
+	}
+	a.active = -1
+
+	if a.repoPanel != nil {
+		a.repoPanel.groups = a.collectGroups()
+	}
+	a.switchMode(repoIdx, newMode)
+}
+
+// removeRepoFromUI drops repos[idx] from the in-memory state, pauses its
+// refresh manager, and re-points the active repo. When the last repo is gone
+// it swaps the window content back to the empty state.
+func (a *App) removeRepoFromUI(repoIdx int) {
+	a.repos[repoIdx].refreshMgr.Pause()
+	a.repos = append(a.repos[:repoIdx], a.repos[repoIdx+1:]...)
+
+	if len(a.repos) == 0 {
+		a.repoPanel = nil
+		a.dashboard = nil
+		a.refreshMgr = nil
+		a.dashSlot = nil
+		a.active = -1
+		a.window.SetContent(a.emptyState())
+		return
+	}
+
+	newActive := a.active
+	if newActive > repoIdx {
+		newActive--
+	}
+	if newActive >= len(a.repos) {
+		newActive = len(a.repos) - 1
+	}
+	if newActive < 0 {
+		newActive = 0
+	}
+
+	a.active = -1
+	if a.repoPanel != nil {
+		a.repoPanel.groups = a.collectGroups()
+	}
+	a.switchMode(newActive, 0)
 }
 
 func (a *App) collectGroups() []*RepoGroup {
