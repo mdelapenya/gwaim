@@ -20,6 +20,19 @@ type CreateWorktreeResult struct {
 	Err        error
 }
 
+// ErrorMessage returns a user-facing error message, preferring sbx's stderr
+// (SbxOutput) over the bare exec error. See SandboxResult.ErrorMessage for
+// the rationale. Returns "" if Err is nil.
+func (r CreateWorktreeResult) ErrorMessage() string {
+	if r.Err == nil {
+		return ""
+	}
+	if msg := FirstNonEmptyLine(r.SbxOutput); msg != "" {
+		return msg
+	}
+	return r.Err.Error()
+}
+
 // CreateWorktree creates a new linked worktree for the given branch.
 func CreateWorktree(repo *git.Repository, branchName string) CreateWorktreeResult {
 	err := repo.CreateWorktree(branchName)

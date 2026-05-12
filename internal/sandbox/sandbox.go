@@ -15,9 +15,17 @@ func Available() bool {
 }
 
 // CreateArgs returns the arguments for creating a sandbox without attaching:
-// sbx create --name <name> <agent> <repoPath>
-func CreateArgs(name, agent, repoPath string) []string {
-	return []string{"sbx", "create", "--name", name, agent, repoPath}
+// sbx create --name <name> [--kit <url>...] <agent> <repoPath>
+//
+// kitURLs is optional; pass nil for a vanilla sandbox. Each kit URL is
+// emitted as its own --kit flag. Kits can only be applied at creation time —
+// `sbx run --kit` rejects the flag against an existing sandbox.
+func CreateArgs(name, agent, repoPath string, kitURLs []string) []string {
+	args := []string{"sbx", "create", "--name", name}
+	for _, k := range kitURLs {
+		args = append(args, "--kit", k)
+	}
+	return append(args, agent, repoPath)
 }
 
 // RunDetachedWithBranchArgs returns the arguments for creating a worktree

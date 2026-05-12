@@ -139,6 +139,15 @@ func buildCardContent(
 			}
 			items = append(items, monoText(ver, colorDimGray, false))
 		}
+		for _, k := range sbx.Kits {
+			label := "🧩 " + k.Name
+			if k.Ref != "" {
+				label += "@" + k.Ref
+			}
+			line := monoText(truncateStr(label, pathMax), colorPurple, false)
+			line.TextSize = scaledSize(11)
+			items = append(items, line)
+		}
 	}
 
 	// Separator before status section.

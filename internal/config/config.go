@@ -7,12 +7,22 @@ import (
 	"path/filepath"
 )
 
+// KitInstall records a kit applied to a sandbox at create time. Ref is the
+// short commit SHA of docker/sbx-kits-contrib captured the moment the kit
+// was installed — biomelab uses it as a "version" for display only; the
+// install URL itself is not pinned to that ref.
+type KitInstall struct {
+	Name string `json:"name"`          // kit directory in sbx-kits-contrib (e.g. "code-server")
+	Ref  string `json:"ref,omitempty"` // short SHA captured at install time
+}
+
 // ModeEntry describes how a repo is managed: regular (host worktrees) or
 // sandbox (Docker Sandbox via sbx CLI).
 type ModeEntry struct {
-	Type        string `json:"type"`                   // "regular" or "sandbox"
-	SandboxName string `json:"sandbox_name,omitempty"` // sbx sandbox name (sandbox only)
-	Agent       string `json:"agent,omitempty"`        // agent name (sandbox only, e.g. "claude")
+	Type        string       `json:"type"`                   // "regular" or "sandbox"
+	SandboxName string       `json:"sandbox_name,omitempty"` // sbx sandbox name (sandbox only)
+	Agent       string       `json:"agent,omitempty"`        // agent name (sandbox only, e.g. "claude")
+	Kits        []KitInstall `json:"kits,omitempty"`         // kits applied at create time (sandbox only)
 }
 
 // RepoEntry represents a registered repository with one or more modes.
@@ -238,6 +248,25 @@ func (c *Config) UpdateSandboxName(path, oldName, newName string) bool {
 		}
 	}
 	return changed
+}
+
+// SetSandboxKits replaces the recorded kits for a sandbox mode identified by
+// (repo path, sandbox name). Pass nil to clear. Returns true if a matching
+// mode was found and updated.
+func (c *Config) SetSandboxKits(path, sandboxName string, kits []KitInstall) bool {
+	for i := range c.Repos {
+		if c.Repos[i].Path != path {
+			continue
+		}
+		for j := range c.Repos[i].Modes {
+			m := &c.Repos[i].Modes[j]
+			if m.Type == "sandbox" && m.SandboxName == sandboxName {
+				m.Kits = kits
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Remove removes a repo entry by path (all modes).
