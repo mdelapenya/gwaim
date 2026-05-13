@@ -91,7 +91,13 @@ type PRProvider interface {
 	// CreatePR pushes the branch (if needed) and creates a PR/MR.
 	// targetRepo is "owner/repo" derived from the selected remote;
 	// if empty, the CLI's default repo detection is used.
-	CreatePR(repoDir, branch, targetRepo string) (*PRInfo, error)
+	// title, when non-empty, is passed as the PR/MR title (overriding the
+	// usual commit-subject derivation). When empty, the implementation
+	// derives the title from the branch's latest commit.
+	// bodyFile, when non-empty, is the absolute path to a markdown file
+	// whose contents become the PR/MR description (replacing the default
+	// commit-derived body). When empty, the CLI's --fill default is used.
+	CreatePR(repoDir, branch, targetRepo, title, bodyFile string) (*PRInfo, error)
 
 	// Name returns the display name of the provider (e.g., "GitHub", "GitLab").
 	Name() string
@@ -149,7 +155,7 @@ func (u *UnsupportedProvider) FetchPRs(_ string, _ []string) PRResult {
 }
 
 // CreatePR always returns an error for unsupported providers.
-func (u *UnsupportedProvider) CreatePR(_, _, _ string) (*PRInfo, error) {
+func (u *UnsupportedProvider) CreatePR(_, _, _, _, _ string) (*PRInfo, error) {
 	return nil, fmt.Errorf("PR creation not supported for %s", u.provider)
 }
 

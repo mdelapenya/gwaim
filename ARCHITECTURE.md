@@ -116,6 +116,66 @@ type RepoEntry struct {
 
 The old flat format (with `Sandbox bool`) is auto-migrated on load.
 
+## Task notes
+
+Each worktree has two optional artifact files that biomelab reads during the
+Send PR flow. The package is `internal/notes/`.
+
+| Path                                | Purpose                            |
+|-------------------------------------|------------------------------------|
+| `<worktree>/.biomelab/note.md`      | PR description — free-form Markdown |
+| `<worktree>/.biomelab/pr-title.md`  | PR title — single line              |
+
+**Contract**
+
+- Files live **inside** the worktree, so they're mounted into the sandbox
+  microVM alongside the source. Agents running in the sandbox read them as
+  ordinary files at the worktree root.
+- On first save, biomelab appends `/.biomelab/` to the **common gitdir's**
+  `info/exclude` (resolved via `<wt-gitdir>/commondir` for linked worktrees).
+  The per-worktree `info/exclude` file created by `git worktree add` is
+  **not** consulted by `git status` / `git check-ignore` — verified
+  empirically. One exclude entry covers both files in every worktree of the
+  repo; idempotent on repeat writes.
+- `note.md` (`notes.Write`): trailing whitespace is stripped and the file
+  ends in a single newline. All-whitespace input is treated as a delete.
+- `pr-title.md` (`notes.WriteTitle`): whitespace runs (including embedded
+  newlines and tabs) are collapsed to single spaces via
+  `strings.Fields` + `Join`, so the file is always one clean line + newline.
+  Empty-after-collapse input is treated as a delete. `notes.ReadTitle`
+  returns the first non-empty line.
+
+**Lifecycle**
+
+- Created on save from the editor (`m` key or right-click → editor → Save,
+  or Cmd/Ctrl+S).
+- Deleted when the user clears the corresponding field and saves, clicks
+  "Delete note" in the editor (removes both files after confirmation), or
+  removes the worktree (`ops.RemoveWorktree` wipes the entire directory).
+- Survives sandbox restarts because the artifact dir is part of the mounted
+  worktree, not container-only state.
+
+**Extension point**
+
+Any external tool can populate these paths and biomelab picks them up at PR
+send time. The flow: when the user presses `Shift+P` and the confirm dialog
+shows the **Use task notes for the PR title and description** checkbox
+(rendered when either file exists), ticking it makes biomelab pass
+
+```
+gh pr create --title <pr-title.md content> --body-file <note.md path> --head <branch>
+```
+
+(or the `glab mr create --title ... --description-file ...` equivalent on
+GitLab). Either side falls back to the commit-derived default when the
+corresponding file is absent. When the checkbox is unticked, biomelab falls
+back to `--fill` for both — the note files are ignored, not removed.
+
+This contract is what the [`/pr-scribe`](https://github.com/mdelapenya/coding-skills)
+skill (and similar tools) target: write the generated title and description
+to those two paths, and biomelab turns them into the actual PR on the next
+`Shift+P`.
+
 ## Pitfalls
 
 - go-git v6 is a pseudo-version. Do NOT use a `replace` directive.

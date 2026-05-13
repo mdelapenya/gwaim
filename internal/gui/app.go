@@ -67,7 +67,11 @@ type App struct {
 	focus        focusPanel
 	dialogOpen   bool
 	activeDialog interface{ Hide() } // current dialog, for Escape dismissal
-	trayMenu     *fyne.Menu
+	// noteWindows tracks the currently-open note editor windows keyed by
+	// the worktree path so a repeated 'm' or Review click raises the
+	// existing window instead of spawning duplicates.
+	noteWindows map[string]fyne.Window
+	trayMenu    *fyne.Menu
 	// System tray theme submenu items, held so we can update Checked state.
 	trayThemeLight *fyne.MenuItem
 	trayThemeDark  *fyne.MenuItem
@@ -242,6 +246,10 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 	dash := NewDashboard(state)
 	dash.OnCardSelected = func(_ int) {
 		a.focus = focusRight // clicking a card means right panel has focus
+	}
+	dash.OnNoteRequested = func(wt git.Worktree) {
+		a.focus = focusRight
+		a.openNoteDialog(wt)
 	}
 
 	rm := NewRefreshManager(repo, a.detector, a.ideDetector, a.termDetector, a.procLister, prProv, a.refreshInterval)

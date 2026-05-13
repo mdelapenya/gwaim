@@ -34,10 +34,34 @@ func (g *GitLabProvider) Name() string { return "GitLab" }
 func (g *GitLabProvider) Provider() Provider { return ProviderGitLab }
 
 // CreatePR creates a merge request on GitLab using the glab CLI.
-// It runs "glab mr create --fill --source-branch <branch>" with an optional "--repo <targetRepo>".
-// After creation, it fetches full MR info via "glab mr view".
-func (g *GitLabProvider) CreatePR(repoDir, branch, targetRepo string) (*PRInfo, error) {
-	args := []string{"mr", "create", "--fill", "--source-branch", branch}
+// Without either override, it runs "glab mr create --fill --source-branch <branch>"
+// so commit messages become the title and description. When title is non-empty,
+// it is passed as --title; when bodyFile is non-empty, it is passed as
+// --description-file. Mixed cases fill in the remaining side from defaults
+// (commit subject for title, --fill for description). An optional
+// "--repo <targetRepo>" is passed through in any case. After creation, full
+// MR info is fetched via "glab mr view".
+func (g *GitLabProvider) CreatePR(repoDir, branch, targetRepo, title, bodyFile string) (*PRInfo, error) {
+	args := []string{"mr", "create", "--source-branch", branch}
+	hasOverride := title != "" || bodyFile != ""
+	if hasOverride {
+		effectiveTitle := title
+		if effectiveTitle == "" {
+			subj, terr := commitSubject(repoDir, branch)
+			if terr != nil || subj == "" {
+				subj = branch
+			}
+			effectiveTitle = subj
+		}
+		args = append(args, "--title", effectiveTitle)
+		if bodyFile != "" {
+			args = append(args, "--description-file", bodyFile)
+		} else {
+			args = append(args, "--fill")
+		}
+	} else {
+		args = append(args, "--fill")
+	}
 	if targetRepo != "" {
 		args = append(args, "--repo", targetRepo)
 	}

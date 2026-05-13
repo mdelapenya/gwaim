@@ -120,12 +120,16 @@ type SendPRResult struct {
 	Err error
 }
 
-// SendPR pushes a branch to a remote and creates a PR.
-func SendPR(repo *git.Repository, prProv provider.PRProvider, branch string, remote git.RemoteInfo) SendPRResult {
+// SendPR pushes a branch to a remote and creates a PR. title, when
+// non-empty, becomes the PR title (overriding the usual commit-subject
+// derivation). bodyFile, when non-empty, must be an absolute path to a
+// markdown file whose contents will replace the default commit-derived
+// description.
+func SendPR(repo *git.Repository, prProv provider.PRProvider, branch string, remote git.RemoteInfo, title, bodyFile string) SendPRResult {
 	if err := repo.Push(remote.Name, branch); err != nil {
 		return SendPRResult{Err: fmt.Errorf("push: %w", err)}
 	}
-	pr, err := prProv.CreatePR(repo.Root(), branch, remote.Repo)
+	pr, err := prProv.CreatePR(repo.Root(), branch, remote.Repo, title, bodyFile)
 	if err != nil {
 		return SendPRResult{Err: err}
 	}

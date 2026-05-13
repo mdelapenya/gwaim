@@ -53,6 +53,7 @@
         <li><a href="#dashboard">Dashboard</a></li>
         <li><a href="#sandboxes">Sandboxes</a></li>
         <li><a href="#workflow">Workflow</a></li>
+        <li><a href="#notes">Notes</a></li>
         <li><a href="#kanban">Kanban</a></li>
         <li><a href="#install">Install</a></li>
         <li>
@@ -330,6 +331,40 @@
     </div>
   </section>
 
+  <section id="notes" class="notes">
+    <div class="container">
+      <span class="section-label">Task Notes</span>
+      <h2>Brief your agent, draft your PR — <span class="notes-accent">in the same place</span></h2>
+      <p class="notes-intro">A Markdown editor scoped to each worktree. Lives next to the code, mounted into the sandbox, and lands as your PR title and description when you ship.</p>
+      <div class="notes-features">
+        <div class="notes-feat-card"><span class="icon">📝</span>
+          <h3>Note next to the code</h3>
+          <p>Press <kbd>m</kbd> or right-click a card to open the editor. Single-line PR title above, multi-line Markdown body with a live preview pane.</p>
+        </div>
+        <div class="notes-feat-card"><span class="icon">🐋</span>
+          <h3>Reaches your agent</h3>
+          <p>Stored inside the worktree, so the file gets mounted into the sandbox microVM. Your agent reads your intent as an ordinary file at the working tree root.</p>
+        </div>
+        <div class="notes-feat-card"><span class="icon">🚀</span>
+          <h3>Becomes the PR</h3>
+          <p>On <kbd>P</kbd>, biomelab offers to use your prepared title and description in place of the commit-derived defaults. Skip the rewrite — the note <em>is</em> the description.</p>
+        </div>
+      </div>
+
+      <div class="notes-snippet">
+        <h4 class="snippet-title">Extension point</h4>
+        <pre><span class="notes-comment"># Any skill, agent, or script can populate the two artifact files:</span>
+&lt;worktree&gt;/.biomelab/pr-title.md      <span class="notes-comment"># single-line PR title</span>
+&lt;worktree&gt;/.biomelab/note.md          <span class="notes-comment"># PR description (Markdown)</span>
+
+<span class="notes-comment"># biomelab turns them into the actual PR on Shift+P:</span>
+gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</span> \
+             --body-file <span class="notes-arg">.biomelab/note.md</span></pre>
+        <p class="notes-snippet-foot">Write to those paths and biomelab handles the rest. Falls back to commit-derived <code>--fill</code> when files are absent.</p>
+      </div>
+    </div>
+  </section>
+
   <section id="kanban" class="kanban-board">
     <div class="container">
       <span class="section-label">Kanban Board</span>
@@ -568,6 +603,7 @@
         <div class="key-item"><span class="key-cap key-green">c</span><span class="key-action">Create worktree</span></div>
         <div class="key-item"><span class="key-cap key-red">d</span><span class="key-action">Delete worktree</span></div>
         <div class="key-item"><span class="key-cap key-cyan">e</span><span class="key-action">Open in editor</span></div>
+        <div class="key-item"><span class="key-cap key-yellow">m</span><span class="key-action">Open note editor</span></div>
         <div class="key-item"><span class="key-cap key-blue">f</span><span class="key-action">Fetch PR / MR</span></div>
         <div class="key-item"><span class="key-cap key-cyan">g</span><span class="key-action">Toggle kanban / grid</span></div>
         <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox</span></div>

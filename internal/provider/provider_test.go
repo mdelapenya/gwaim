@@ -111,7 +111,7 @@ func TestUnsupportedProvider(t *testing.T) {
 		t.Errorf("expected empty PRResult, got %d entries", len(result))
 	}
 
-	pr, err := p.CreatePR("/tmp", "feature", "owner/repo")
+	pr, err := p.CreatePR("/tmp", "feature", "owner/repo", "", "")
 	if err == nil {
 		t.Error("expected error from UnsupportedProvider.CreatePR")
 	}

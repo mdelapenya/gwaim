@@ -635,6 +635,7 @@ nav .container {
 .problem,
 .sandbox,
 .parallel,
+.notes,
 .keyboard {
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 90%, transparent), color-mix(in srgb, var(--bg-secondary) 95%, transparent));
   border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
@@ -661,6 +662,7 @@ nav .container {
 .dashboard>p,
 .sandbox>.container>p,
 .workflow>.container>p,
+.notes>.container>p,
 .keyboard>.container>p,
 .install-copy {
   max-width: 65ch
@@ -1665,14 +1667,16 @@ footer {
   margin-bottom: 3rem
 }
 
-.kanban-features {
+.kanban-features,
+.notes-features {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
   margin-bottom: 3rem
 }
 
-.kanban-feat-card {
+.kanban-feat-card,
+.notes-feat-card {
   background: linear-gradient(180deg,
     color-mix(in srgb, var(--bg-card) 100%, transparent),
     color-mix(in srgb, var(--bg-tertiary) 100%, transparent));
@@ -1684,24 +1688,28 @@ footer {
   transition: .22s transform ease, .22s border-color ease, .22s box-shadow ease
 }
 
-.kanban-feat-card:hover {
+.kanban-feat-card:hover,
+.notes-feat-card:hover {
   transform: translateY(-3px);
   border-color: var(--border-strong);
   box-shadow: var(--shadow-card)
 }
 
-.kanban-feat-card .icon {
+.kanban-feat-card .icon,
+.notes-feat-card .icon {
   font-size: 2rem;
   margin-bottom: 1rem;
   display: block
 }
 
-.kanban-feat-card p {
+.kanban-feat-card p,
+.notes-feat-card p {
   font-size: .93rem;
   line-height: 1.55
 }
 
-.kanban-feat-card kbd {
+.kanban-feat-card kbd,
+.notes-feat-card kbd {
   display: inline-block;
   background: var(--code-bg);
   border: 1px solid var(--border);
@@ -1950,4 +1958,85 @@ footer {
   .kanban-features {
     grid-template-columns: 1fr
   }
+
+  .notes-features {
+    grid-template-columns: 1fr
+  }
+}
+
+/* ── Task Notes ──────────────────────────────────────────── */
+.notes-accent {
+  background: linear-gradient(135deg, var(--yellow), var(--magenta) 60%, var(--cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 6px rgba(0,0,0,.2))
+}
+
+[data-theme="light"] .notes-accent {
+  filter: none
+}
+
+.notes-intro {
+  font-size: 1.12rem;
+  margin-top: 1rem;
+  margin-bottom: 3rem
+}
+
+.notes-snippet {
+  margin-top: 1rem;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg-card) 100%, transparent),
+    color-mix(in srgb, var(--bg-tertiary) 100%, transparent));
+  box-shadow: var(--shadow-soft)
+}
+
+.notes-snippet .snippet-title {
+  font-size: .82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--text-muted);
+  margin: 0 0 1rem
+}
+
+.notes-snippet pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  font-family: var(--font-mono);
+  font-size: .9rem;
+  color: var(--cyan);
+  line-height: 1.65;
+  overflow-x: auto;
+  margin: 0
+}
+
+.notes-snippet .notes-comment {
+  color: var(--text-muted)
+}
+
+.notes-snippet .notes-arg {
+  color: var(--green)
+}
+
+.notes-snippet-foot {
+  font-size: .9rem;
+  color: var(--text-secondary);
+  margin: 1rem 0 0
+}
+
+.notes-snippet-foot code {
+  font-family: var(--font-mono);
+  font-size: .85rem;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .05rem .4rem;
+  color: var(--cyan)
 }

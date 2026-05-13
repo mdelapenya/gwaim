@@ -34,10 +34,34 @@ func (g *GitHubProvider) Name() string { return "GitHub" }
 func (g *GitHubProvider) Provider() Provider { return ProviderGitHub }
 
 // CreatePR creates a pull request on GitHub using the gh CLI.
-// It runs "gh pr create --fill --head <branch>" with an optional "--repo <targetRepo>".
-// After creation, it fetches full PR info via "gh pr view".
-func (g *GitHubProvider) CreatePR(repoDir, branch, targetRepo string) (*PRInfo, error) {
-	args := []string{"pr", "create", "--fill", "--head", branch}
+// Without either override, it runs "gh pr create --fill --head <branch>" so
+// commit messages become the title and body. When title is non-empty, it is
+// passed as --title; when bodyFile is non-empty, it is passed as --body-file.
+// Mixed cases fill in the remaining side from defaults (commit subject for
+// title, --fill for body). An optional "--repo <targetRepo>" is passed
+// through in any case. After creation, full PR info is fetched via
+// "gh pr view".
+func (g *GitHubProvider) CreatePR(repoDir, branch, targetRepo, title, bodyFile string) (*PRInfo, error) {
+	args := []string{"pr", "create", "--head", branch}
+	hasOverride := title != "" || bodyFile != ""
+	if hasOverride {
+		effectiveTitle := title
+		if effectiveTitle == "" {
+			subj, terr := commitSubject(repoDir, branch)
+			if terr != nil || subj == "" {
+				subj = branch
+			}
+			effectiveTitle = subj
+		}
+		args = append(args, "--title", effectiveTitle)
+		if bodyFile != "" {
+			args = append(args, "--body-file", bodyFile)
+		} else {
+			args = append(args, "--fill")
+		}
+	} else {
+		args = append(args, "--fill")
+	}
 	if targetRepo != "" {
 		args = append(args, "--repo", targetRepo)
 	}
@@ -60,6 +84,19 @@ func (g *GitHubProvider) CreatePR(repoDir, branch, targetRepo string) (*PRInfo, 
 		return &PRInfo{URL: url, State: "open"}, nil
 	}
 	return pr, nil
+}
+
+// commitSubject returns the subject line of the latest commit on branch.
+// Used to derive a PR title when the caller supplies a custom body and we
+// need to fill in the title gh would otherwise have computed from --fill.
+func commitSubject(repoDir, branch string) (string, error) {
+	cmd := exec.Command("git", "log", "-1", "--pretty=%s", branch)
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git log: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func fetchGitHubPR(repoDir, branch string) *PRInfo {

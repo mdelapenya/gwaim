@@ -422,10 +422,29 @@ func (r *Repository) mainWorktree() (*Worktree, error) {
 	if err != nil {
 		return nil, err
 	}
-	wt.IsDirty = !status.IsClean()
+	wt.IsDirty = isDirtyIgnoringBiomelab(status)
 	wt.Sync = r.syncStatus(wt.Branch)
 
 	return wt, nil
+}
+
+// isDirtyIgnoringBiomelab returns true when status reports any change other
+// than entries under the .biomelab/ directory. go-git's Status() does not
+// honor .git/info/exclude (only in-tree .gitignore files), so biomelab's
+// own scratchpad files would otherwise mark every worktree dirty even when
+// `git status` agrees it's clean. Scoped to .biomelab/ on purpose — fixing
+// the broader info/exclude gap in go-git is a separate concern.
+func isDirtyIgnoringBiomelab(status gogit.Status) bool {
+	for path, s := range status {
+		if s.Staging == gogit.Unmodified && s.Worktree == gogit.Unmodified {
+			continue
+		}
+		if path == ".biomelab" || strings.HasPrefix(path, ".biomelab/") {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // referenceRemotes are the remote names checked for sync status.
@@ -537,7 +556,7 @@ func (r *Repository) linkedWorktree(name string) (*Worktree, error) {
 	if err != nil {
 		return nil, err
 	}
-	wt.IsDirty = !status.IsClean()
+	wt.IsDirty = isDirtyIgnoringBiomelab(status)
 	wt.Sync = r.syncStatus(wt.Branch)
 
 	return wt, nil

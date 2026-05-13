@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 
 	"github.com/mdelapenya/biomelab/internal/agent"
+	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/ide"
 	"github.com/mdelapenya/biomelab/internal/ops"
 	"github.com/mdelapenya/biomelab/internal/provider"
@@ -117,6 +118,10 @@ type Dashboard struct {
 	// OnCardSelected is called when a card is clicked. The index is the
 	// worktree index (0=main, 1+=linked).
 	OnCardSelected func(idx int)
+
+	// OnNoteRequested fires when the user right-clicks a card and wants to
+	// open the per-worktree note editor.
+	OnNoteRequested func(wt git.Worktree)
 }
 
 // NewDashboard creates a dashboard from the given repo state.
@@ -265,6 +270,12 @@ func (d *Dashboard) build() fyne.CanvasObject {
 		}
 		d.Rebuild()
 	})
+	mainWtCopy := *mainWt
+	mainCard.SetOnSecondaryTap(func() {
+		if d.OnNoteRequested != nil {
+			d.OnNoteRequested(mainWtCopy)
+		}
+	})
 
 	// Contextual help below main card (dynamic, matches TUI).
 	helpStr := "[c] create  [f] fetch PR  [p] pull"
@@ -326,13 +337,20 @@ func (d *Dashboard) build() fyne.CanvasObject {
 			isSelected,
 		)
 		cardIdx := wtIdx // capture for closure
-		cards = append(cards, makeCard(content, isSelected, false, func() {
+		wtCopy := wt     // capture for closure
+		card := makeCard(content, isSelected, false, func() {
 			d.state.SelectedCard = cardIdx
 			if d.OnCardSelected != nil {
 				d.OnCardSelected(cardIdx)
 			}
 			d.Rebuild()
-		}))
+		})
+		card.SetOnSecondaryTap(func() {
+			if d.OnNoteRequested != nil {
+				d.OnNoteRequested(wtCopy)
+			}
+		})
+		cards = append(cards, card)
 	}
 
 	// Section header.
@@ -355,7 +373,7 @@ func (d *Dashboard) helpBar() fyne.CanvasObject {
 	if d.state.ViewMode == ViewKanban {
 		viewHint = "[g] grid"
 	}
-	help := monoText("↑↓ nav  [Tab] panel  [⏎] open  [e] editor  [r] refresh  [d] delete  [p] pull  [P] PR  "+viewHint, colorDimGray, false)
+	help := monoText("↑↓ nav  [Tab] panel  [⏎] open  [e] editor  [m] note  [r] refresh  [d] delete  [p] pull  [P] PR  "+viewHint, colorDimGray, false)
 	help.TextSize = scaledSize(9)
 
 	return container.NewStack(bg, container.NewPadded(help))

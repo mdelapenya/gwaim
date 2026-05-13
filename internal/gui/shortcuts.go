@@ -12,6 +12,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/kits"
+	"github.com/mdelapenya/biomelab/internal/notes"
 	"github.com/mdelapenya/biomelab/internal/ops"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
@@ -116,6 +117,8 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 		a.handleCreateOrEnrollSandbox()
 	case fyne.KeyK:
 		a.handleInstallKits()
+	case fyne.KeyM:
+		a.handleEditNote()
 	}
 }
 
@@ -660,6 +663,18 @@ func (a *App) handlePull() {
 	}()
 }
 
+func (a *App) handleEditNote() {
+	re := a.activeRepo()
+	if re == nil {
+		return
+	}
+	idx, ok := a.selectedWorktree()
+	if !ok {
+		return
+	}
+	a.openNoteDialog(re.state.Worktrees[idx])
+}
+
 func (a *App) handleOpenEditor() {
 	re := a.activeRepo()
 	if re == nil {
@@ -721,40 +736,60 @@ func (a *App) handleSendPR() {
 	}
 
 	done := a.openDialog()
-	a.sendPRFlow(re, wt.Branch, remotes, needsWarning, wt.IsDirty, hasStash, existingPR, done)
+	a.sendPRFlow(re, wt, remotes, needsWarning, wt.IsDirty, hasStash, existingPR, done)
 }
 
-func (a *App) sendPRFlow(re *repoEntry, branch string, remotes []git.RemoteInfo, needsWarning, dirty, hasStash bool, existingPR *provider.PRInfo, done func()) {
+func (a *App) sendPRFlow(re *repoEntry, wt git.Worktree, remotes []git.RemoteInfo, needsWarning, dirty, hasStash bool, existingPR *provider.PRInfo, done func()) {
 	if needsWarning {
-		a.activeDialog = showSendPRDirtyWarning(a.window, branch, dirty, hasStash, done, func() {
-			a.sendPRSelectRemote(re, branch, remotes, existingPR, done)
+		a.activeDialog = showSendPRDirtyWarning(a.window, wt.Branch, dirty, hasStash, done, func() {
+			a.sendPRSelectRemote(re, wt, remotes, existingPR, done)
 		})
 		return
 	}
-	a.sendPRSelectRemote(re, branch, remotes, existingPR, done)
+	a.sendPRSelectRemote(re, wt, remotes, existingPR, done)
 }
 
-func (a *App) sendPRSelectRemote(re *repoEntry, branch string, remotes []git.RemoteInfo, existingPR *provider.PRInfo, done func()) {
+func (a *App) sendPRSelectRemote(re *repoEntry, wt git.Worktree, remotes []git.RemoteInfo, existingPR *provider.PRInfo, done func()) {
 	if len(remotes) > 1 {
 		a.activeDialog = showSendPRRemoteSelection(a.window, remotes, done, func(idx int) {
-			a.sendPRConfirm(re, branch, remotes[idx], existingPR, done)
+			a.sendPRConfirm(re, wt, remotes[idx], existingPR, done)
 		})
 		return
 	}
-	a.sendPRConfirm(re, branch, remotes[0], existingPR, done)
+	a.sendPRConfirm(re, wt, remotes[0], existingPR, done)
 }
 
-func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo, existingPR *provider.PRInfo, done func()) {
-	a.activeDialog = showSendPRConfirm(a.window, branch, remote, existingPR, done, func() {
+func (a *App) sendPRConfirm(re *repoEntry, wt git.Worktree, remote git.RemoteInfo, existingPR *provider.PRInfo, done func()) {
+	// Resolve note state at dialog-open time only to decide whether to
+	// render the checkbox. At confirm time we re-resolve from disk so any
+	// edits/deletes made during a Review pass are honored.
+	hasNotes := notes.Exists(wt.Path)
+	if !hasNotes {
+		if _, ok, _ := notes.ReadTitle(wt.Path); ok {
+			hasNotes = true
+		}
+	}
+	onReview := func() { a.openNoteDialog(wt) }
+	a.activeDialog = showSendPRConfirm(a.window, wt.Branch, remote, existingPR, hasNotes, done, func(useNotes bool) {
 		pushOnly := existingPR != nil
 		if pushOnly {
 			a.setStatus("Pushing...", false)
 		} else {
 			a.setStatus("Pushing and creating PR...", false)
 		}
+		title := ""
+		bodyFile := ""
+		if useNotes {
+			if t, ok, _ := notes.ReadTitle(wt.Path); ok {
+				title = t
+			}
+			if notes.Exists(wt.Path) {
+				bodyFile = notes.Path(wt.Path)
+			}
+		}
 		go func() {
 			if pushOnly {
-				err := ops.PushBranch(re.repo, branch, remote)
+				err := ops.PushBranch(re.repo, wt.Branch, remote)
 				fyne.Do(func() {
 					if err != nil {
 						a.setStatus("Push failed: "+err.Error(), true)
@@ -764,7 +799,7 @@ func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo,
 					a.refreshMgr.TriggerNetwork()
 				})
 			} else {
-				result := ops.SendPR(re.repo, re.prProv, branch, remote)
+				result := ops.SendPR(re.repo, re.prProv, wt.Branch, remote, title, bodyFile)
 				fyne.Do(func() {
 					if result.Err != nil {
 						a.setStatus("PR creation failed: "+result.Err.Error(), true)
@@ -775,7 +810,7 @@ func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo,
 				})
 			}
 		}()
-	})
+	}, onReview)
 }
 
 // --- Sandbox operations ---

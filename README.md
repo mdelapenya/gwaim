@@ -21,6 +21,7 @@
 - **Pull** -- Press `p` to fetch all remotes and merge from origin.
 - **Open in terminal** -- Press `Enter` to open a worktree in a terminal. If a terminal is already detected for that worktree, it is brought to the foreground instead of opening a new one. On macOS, activation uses TTY matching via AppleScript (requires Automation permission on first use).
 - **Open in editor** -- Press `e` to open in `$BIOME_EDITOR` (defaults to VS Code).
+- **Task notes** -- Press `m` (or right-click a card) to open a Markdown editor with a live preview, scoped to that worktree. Notes are stored at `<worktree>/.biomelab/note.md` (description) and `<worktree>/.biomelab/pr-title.md` (single-line title), auto-excluded from git, and mounted into the sandbox alongside the source so agents can read them. When you `Shift+P` to send a PR, biomelab offers to use the prepared title and description in place of the commit-derived defaults. External tools that write to those two paths become contributors to the next PR.
 - **Zoom** -- `Ctrl+=` / `Ctrl+-` / `Ctrl+0` to scale the UI font.
 - **System tray** -- Closing the window hides to system tray. Tray menu toggles Show/Hide.
 - **Auto-refresh** -- Local state refreshes every 5s, network state every 30s (configurable).
@@ -124,6 +125,7 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 | `→` | Navigate right | Linked cards |
 | `Enter` | Activate existing terminal or open new | Any card |
 | `e` | Open in editor | Any card |
+| `m` | Open note editor (right-click also works) | Any card |
 | `c` | Create worktree | Main card |
 | `f` | Fetch PR/MR | Main card |
 | `d` | Delete worktree / remove sandbox | Linked: delete; Main+sandbox: remove |
