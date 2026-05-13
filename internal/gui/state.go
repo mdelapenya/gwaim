@@ -9,6 +9,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/ops"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 	"github.com/mdelapenya/biomelab/internal/terminal"
@@ -65,6 +66,65 @@ type SandboxCardInfo struct {
 	ClientVersion string
 	ServerVersion string
 	Kits          []config.KitInstall
+}
+
+// Apply updates the state from a refresh result. Returns false when the
+// result's snapshot generation predates the last applied snapshot — this
+// is the staleness guard that keeps a long-running refresh from
+// resurrecting a worktree the user just deleted. Errors always pass
+// through so users still see them.
+//
+// Pure state mutation: no UI side-effects, no AfterFunc, no fyne calls.
+// The Dashboard's ApplyRefresh wraps this with the flash-clearing timer
+// and a Rebuild.
+func (s *RepoState) Apply(result ops.RefreshResult) bool {
+	if result.Err == nil && result.Generation < s.LastAppliedGen {
+		return false
+	}
+	if result.Generation > s.LastAppliedGen {
+		s.LastAppliedGen = result.Generation
+	}
+	if result.Err != nil {
+		s.StatusMessage = ops.FirstNonEmptyLine(result.Err.Error())
+		s.StatusIsError = true
+		return true
+	}
+	if result.Worktrees != nil {
+		s.SetWorktrees(result.Worktrees)
+	}
+	if result.Agents != nil {
+		s.Agents = result.Agents
+	}
+	if result.IDEs != nil {
+		s.IDEs = result.IDEs
+	}
+	if result.Terminals != nil {
+		s.Terminals = result.Terminals
+	}
+	if result.HasPRs {
+		s.PRs = result.PRs
+		s.LastNetworkRefresh = time.Now()
+		s.NetFlash = true
+	} else {
+		s.LastLocalRefresh = time.Now()
+		s.LocalFlash = true
+	}
+	// Update sandbox status only when the refresh actually checked it.
+	if result.HasSbxStatus {
+		s.SandboxStatus = result.SandboxStatus
+	}
+	if result.SbxClientVer != "" {
+		s.SbxClientVersion = result.SbxClientVer
+	}
+	if result.SbxServerVer != "" {
+		s.SbxServerVersion = result.SbxServerVer
+	}
+	// NOTE: StatusMessage is intentionally NOT cleared on a successful
+	// refresh. Refreshes happen every couple of seconds; clearing here
+	// wipes user-action messages ("Created X", "Pull complete", CLI
+	// errors) almost immediately. Status stays until another setStatus
+	// call or an Esc dismisses it.
+	return true
 }
 
 // SetWorktrees stores worktrees and sorts linked ones alphabetically by branch.
