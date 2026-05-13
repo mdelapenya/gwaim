@@ -243,6 +243,10 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 	dash.OnCardSelected = func(_ int) {
 		a.focus = focusRight // clicking a card means right panel has focus
 	}
+	dash.OnNoteRequested = func(wt git.Worktree) {
+		a.focus = focusRight
+		a.openNoteDialog(wt)
+	}
 
 	rm := NewRefreshManager(repo, a.detector, a.ideDetector, a.termDetector, a.procLister, prProv, a.refreshInterval)
 	rm.SetSandboxCandidates(sbxCandidates)

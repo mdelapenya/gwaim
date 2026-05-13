@@ -12,6 +12,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/config"
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/kits"
+	"github.com/mdelapenya/biomelab/internal/notes"
 	"github.com/mdelapenya/biomelab/internal/ops"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
@@ -116,6 +117,8 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 		a.handleCreateOrEnrollSandbox()
 	case fyne.KeyK:
 		a.handleInstallKits()
+	case fyne.KeyM:
+		a.handleEditNote()
 	}
 }
 
@@ -660,6 +663,18 @@ func (a *App) handlePull() {
 	}()
 }
 
+func (a *App) handleEditNote() {
+	re := a.activeRepo()
+	if re == nil {
+		return
+	}
+	idx, ok := a.selectedWorktree()
+	if !ok {
+		return
+	}
+	a.openNoteDialog(re.state.Worktrees[idx])
+}
+
 func (a *App) handleOpenEditor() {
 	re := a.activeRepo()
 	if re == nil {
@@ -720,37 +735,53 @@ func (a *App) handleSendPR() {
 		existingPR = re.state.PRs[wt.Branch]
 	}
 
+	notePath := ""
+	if notes.Exists(wt.Path) {
+		notePath = notes.Path(wt.Path)
+	}
+	noteTitle := ""
+	if t, ok, _ := notes.ReadTitle(wt.Path); ok {
+		noteTitle = t
+	}
+
 	done := a.openDialog()
-	a.sendPRFlow(re, wt.Branch, remotes, needsWarning, wt.IsDirty, hasStash, existingPR, done)
+	a.sendPRFlow(re, wt.Branch, remotes, needsWarning, wt.IsDirty, hasStash, existingPR, noteTitle, notePath, done)
 }
 
-func (a *App) sendPRFlow(re *repoEntry, branch string, remotes []git.RemoteInfo, needsWarning, dirty, hasStash bool, existingPR *provider.PRInfo, done func()) {
+func (a *App) sendPRFlow(re *repoEntry, branch string, remotes []git.RemoteInfo, needsWarning, dirty, hasStash bool, existingPR *provider.PRInfo, noteTitle, notePath string, done func()) {
 	if needsWarning {
 		a.activeDialog = showSendPRDirtyWarning(a.window, branch, dirty, hasStash, done, func() {
-			a.sendPRSelectRemote(re, branch, remotes, existingPR, done)
+			a.sendPRSelectRemote(re, branch, remotes, existingPR, noteTitle, notePath, done)
 		})
 		return
 	}
-	a.sendPRSelectRemote(re, branch, remotes, existingPR, done)
+	a.sendPRSelectRemote(re, branch, remotes, existingPR, noteTitle, notePath, done)
 }
 
-func (a *App) sendPRSelectRemote(re *repoEntry, branch string, remotes []git.RemoteInfo, existingPR *provider.PRInfo, done func()) {
+func (a *App) sendPRSelectRemote(re *repoEntry, branch string, remotes []git.RemoteInfo, existingPR *provider.PRInfo, noteTitle, notePath string, done func()) {
 	if len(remotes) > 1 {
 		a.activeDialog = showSendPRRemoteSelection(a.window, remotes, done, func(idx int) {
-			a.sendPRConfirm(re, branch, remotes[idx], existingPR, done)
+			a.sendPRConfirm(re, branch, remotes[idx], existingPR, noteTitle, notePath, done)
 		})
 		return
 	}
-	a.sendPRConfirm(re, branch, remotes[0], existingPR, done)
+	a.sendPRConfirm(re, branch, remotes[0], existingPR, noteTitle, notePath, done)
 }
 
-func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo, existingPR *provider.PRInfo, done func()) {
-	a.activeDialog = showSendPRConfirm(a.window, branch, remote, existingPR, done, func() {
+func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo, existingPR *provider.PRInfo, noteTitle, notePath string, done func()) {
+	hasNotes := noteTitle != "" || notePath != ""
+	a.activeDialog = showSendPRConfirm(a.window, branch, remote, existingPR, hasNotes, done, func(useNotes bool) {
 		pushOnly := existingPR != nil
 		if pushOnly {
 			a.setStatus("Pushing...", false)
 		} else {
 			a.setStatus("Pushing and creating PR...", false)
+		}
+		title := ""
+		bodyFile := ""
+		if useNotes {
+			title = noteTitle
+			bodyFile = notePath
 		}
 		go func() {
 			if pushOnly {
@@ -764,7 +795,7 @@ func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo,
 					a.refreshMgr.TriggerNetwork()
 				})
 			} else {
-				result := ops.SendPR(re.repo, re.prProv, branch, remote)
+				result := ops.SendPR(re.repo, re.prProv, branch, remote, title, bodyFile)
 				fyne.Do(func() {
 					if result.Err != nil {
 						a.setStatus("PR creation failed: "+result.Err.Error(), true)

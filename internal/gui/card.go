@@ -13,6 +13,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/agent"
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/ide"
+	"github.com/mdelapenya/biomelab/internal/notes"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 	"github.com/mdelapenya/biomelab/internal/terminal"
@@ -27,8 +28,9 @@ const maxMainPathChars = 90
 // tappableCard is a custom widget that wraps card content and responds to taps.
 type tappableCard struct {
 	widget.BaseWidget
-	content fyne.CanvasObject
-	onTap   func()
+	content        fyne.CanvasObject
+	onTap          func()
+	onSecondaryTap func()
 }
 
 func newTappableCard(content fyne.CanvasObject, onTap func()) *tappableCard {
@@ -37,13 +39,19 @@ func newTappableCard(content fyne.CanvasObject, onTap func()) *tappableCard {
 	return tc
 }
 
+func (tc *tappableCard) SetOnSecondaryTap(fn func()) { tc.onSecondaryTap = fn }
+
 func (tc *tappableCard) Tapped(_ *fyne.PointEvent) {
 	if tc.onTap != nil {
 		tc.onTap()
 	}
 }
 
-func (tc *tappableCard) TappedSecondary(_ *fyne.PointEvent) {}
+func (tc *tappableCard) TappedSecondary(_ *fyne.PointEvent) {
+	if tc.onSecondaryTap != nil {
+		tc.onSecondaryTap()
+	}
+}
 
 func (tc *tappableCard) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(tc.content)
@@ -102,15 +110,18 @@ func buildCardContent(
 	}
 	branchText := monoText(branchPrefix+wt.Branch, branchColor, true)
 	branchText.TextSize = scaledSize(13)
-	if wt.IsMain {
-		badge := makeBadge("main")
-		items = append(items, container.NewHBox(branchText, badge))
-	} else if wt.Detached {
-		detached := monoText(" (detached)", colorDimGray, false)
-		items = append(items, container.NewHBox(branchText, detached))
-	} else {
-		items = append(items, branchText)
+	row := []fyne.CanvasObject{branchText}
+	if notes.Exists(wt.Path) {
+		noteIcon := monoText(" 📝", colorYellow, false)
+		noteIcon.TextSize = scaledSize(11)
+		row = append(row, noteIcon)
 	}
+	if wt.IsMain {
+		row = append(row, makeBadge("main"))
+	} else if wt.Detached {
+		row = append(row, monoText(" (detached)", colorDimGray, false))
+	}
+	items = append(items, container.NewHBox(row...))
 
 	// Path: prefix-truncated dynamically so it never overflows the card,
 	// regardless of how narrow the card becomes when the window is resized.

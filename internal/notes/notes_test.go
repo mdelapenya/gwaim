@@ -1,0 +1,309 @@
+package notes
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing/object"
+)
+
+// initRepo creates a fresh repo with one commit and returns its absolute path.
+func initRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	repo, err := gogit.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("worktree: %v", err)
+	}
+	f, err := wt.Filesystem.Create("README.md")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, _ = f.Write([]byte("# Test\n"))
+	_ = f.Close()
+	if _, err := wt.Add("README.md"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, err := wt.Commit("init", &gogit.CommitOptions{
+		Author: &object.Signature{Name: "t", Email: "t@t"},
+	}); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	return dir
+}
+
+// addWorktree creates a linked worktree at <repo>/<rel> on a new branch.
+// Returns the absolute worktree path.
+func addWorktree(t *testing.T, repo, branch, rel string) string {
+	t.Helper()
+	wtPath := filepath.Join(repo, rel)
+	cmd := exec.Command("git", "worktree", "add", "-b", branch, wtPath)
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+	return wtPath
+}
+
+func TestPath(t *testing.T) {
+	got := Path("/some/worktree")
+	want := filepath.Join("/some/worktree", ".biomelab", "note.md")
+	if got != want {
+		t.Errorf("Path = %q, want %q", got, want)
+	}
+}
+
+func TestTitlePath(t *testing.T) {
+	got := TitlePath("/some/worktree")
+	want := filepath.Join("/some/worktree", ".biomelab", "pr-title.md")
+	if got != want {
+		t.Errorf("TitlePath = %q, want %q", got, want)
+	}
+}
+
+func TestReadTitle(t *testing.T) {
+	cases := []struct {
+		name    string
+		writeFn func(dir string) // skip writing when nil → file missing
+		want    string           // empty want means ok=false
+	}{
+		{"missing", nil, ""},
+		{"single line", writeTitle("feat(x): do thing\n"), "feat(x): do thing"},
+		{"trims whitespace", writeTitle("  feat(x): do thing  \n"), "feat(x): do thing"},
+		{"first line only", writeTitle("feat(x): do thing\nignored body\nmore body\n"), "feat(x): do thing"},
+		{"empty file", writeTitle(""), ""},
+		{"only whitespace", writeTitle("  \n\n\t  \n"), ""},
+		{"blank lines then content", writeTitle("\n\nfeat(x): do thing\n"), "feat(x): do thing"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tc.writeFn != nil {
+				tc.writeFn(dir)
+			}
+			title, ok, err := ReadTitle(dir)
+			if err != nil {
+				t.Fatalf("ReadTitle: %v", err)
+			}
+			wantOK := tc.want != ""
+			if ok != wantOK {
+				t.Errorf("ok = %v, want %v", ok, wantOK)
+			}
+			if title != tc.want {
+				t.Errorf("title = %q, want %q", title, tc.want)
+			}
+		})
+	}
+}
+
+func writeTitle(content string) func(string) {
+	return func(dir string) {
+		_ = os.MkdirAll(filepath.Join(dir, ".biomelab"), 0o755)
+		_ = os.WriteFile(TitlePath(dir), []byte(content), 0o644)
+	}
+}
+
+func TestReadMissing(t *testing.T) {
+	dir := t.TempDir()
+	content, exists, err := Read(dir)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if exists {
+		t.Errorf("exists = true, want false")
+	}
+	if content != "" {
+		t.Errorf("content = %q, want empty", content)
+	}
+}
+
+func TestExistsMissing(t *testing.T) {
+	dir := t.TempDir()
+	if Exists(dir) {
+		t.Errorf("Exists = true on empty dir")
+	}
+}
+
+func TestWriteReadRoundTrip(t *testing.T) {
+	repo := initRepo(t)
+	body := "# Hello\n\nSome **markdown** notes.\n"
+
+	if err := Write(repo, body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if !Exists(repo) {
+		t.Errorf("Exists = false after Write")
+	}
+	got, exists, err := Read(repo)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if !exists {
+		t.Errorf("exists = false after Write")
+	}
+	if got != body {
+		t.Errorf("Read = %q, want %q", got, body)
+	}
+}
+
+func TestWriteTrimsTrailingWhitespace(t *testing.T) {
+	repo := initRepo(t)
+	if err := Write(repo, "hello\n\n\n   \n\t\n"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got, _, err := Read(repo)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	want := "hello\n"
+	if got != want {
+		t.Errorf("Read = %q, want %q", got, want)
+	}
+}
+
+func TestWriteAllWhitespaceDeletes(t *testing.T) {
+	repo := initRepo(t)
+	if err := Write(repo, "hi"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if !Exists(repo) {
+		t.Fatalf("note should exist before whitespace overwrite")
+	}
+	if err := Write(repo, "\n\n   \t\n"); err != nil {
+		t.Fatalf("Write whitespace: %v", err)
+	}
+	if Exists(repo) {
+		t.Errorf("note should have been deleted by all-whitespace Write")
+	}
+}
+
+func TestDelete(t *testing.T) {
+	repo := initRepo(t)
+	if err := Write(repo, "x"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := Delete(repo); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if Exists(repo) {
+		t.Errorf("Exists = true after Delete")
+	}
+	// Delete on missing is a no-op.
+	if err := Delete(repo); err != nil {
+		t.Fatalf("Delete on missing: %v", err)
+	}
+}
+
+func TestWriteExcludesNoteInMainWorktree(t *testing.T) {
+	repo := initRepo(t)
+	if err := Write(repo, "hi"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	excludePath := filepath.Join(repo, ".git", "info", "exclude")
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("read exclude: %v", err)
+	}
+	if !strings.Contains(string(data), excludeLine) {
+		t.Errorf("exclude file missing %q:\n%s", excludeLine, data)
+	}
+}
+
+func TestWriteExcludesNoteInLinkedWorktree(t *testing.T) {
+	repo := initRepo(t)
+	wtPath := addWorktree(t, repo, "feature/notes", ".biomelab-worktrees/notes")
+
+	if err := Write(wtPath, "linked note"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	// Git only consults info/exclude from the common gitdir, not the
+	// per-worktree gitdir, so the exclude entry must land in the MAIN
+	// repo's .git/info/exclude — anything else and `git status` in the
+	// linked worktree would still flag .biomelab/note.md as untracked.
+	mainExclude := filepath.Join(repo, ".git", "info", "exclude")
+	data, err := os.ReadFile(mainExclude)
+	if err != nil {
+		t.Fatalf("read main exclude: %v", err)
+	}
+	if !strings.Contains(string(data), excludeLine) {
+		t.Errorf("main exclude file missing %q:\n%s", excludeLine, data)
+	}
+}
+
+func TestWriteExcludesIdempotentAcrossWorktrees(t *testing.T) {
+	repo := initRepo(t)
+	wtPath := addWorktree(t, repo, "feature/notes", ".biomelab-worktrees/notes")
+
+	// All worktrees share the common gitdir's exclude file. Writing notes
+	// in both the main and linked worktrees must still produce only one
+	// exclude entry.
+	if err := Write(repo, "main note"); err != nil {
+		t.Fatalf("Write main: %v", err)
+	}
+	if err := Write(wtPath, "linked note"); err != nil {
+		t.Fatalf("Write linked: %v", err)
+	}
+
+	mainExclude := filepath.Join(repo, ".git", "info", "exclude")
+	data, err := os.ReadFile(mainExclude)
+	if err != nil {
+		t.Fatalf("read main exclude: %v", err)
+	}
+	count := strings.Count(string(data), excludeLine)
+	if count != 1 {
+		t.Errorf("exclude line appears %d times across worktree writes, want 1:\n%s", count, data)
+	}
+}
+
+func TestEnsureExcludedIdempotent(t *testing.T) {
+	repo := initRepo(t)
+	for i := range 3 {
+		if err := Write(repo, "x"); err != nil {
+			t.Fatalf("Write #%d: %v", i, err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(repo, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatalf("read exclude: %v", err)
+	}
+	count := strings.Count(string(data), excludeLine)
+	if count != 1 {
+		t.Errorf("exclude line appears %d times, want 1:\n%s", count, data)
+	}
+}
+
+func TestEnsureExcludedAppendsNewlineWhenMissing(t *testing.T) {
+	repo := initRepo(t)
+	excludePath := filepath.Join(repo, ".git", "info", "exclude")
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Pre-existing content without a trailing newline.
+	if err := os.WriteFile(excludePath, []byte("# user-added\nfoo.txt"), 0o644); err != nil {
+		t.Fatalf("seed exclude: %v", err)
+	}
+
+	if err := Write(repo, "x"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("read exclude: %v", err)
+	}
+	// The previous "foo.txt" line must still terminate properly and our
+	// entry must appear on its own line.
+	want := "# user-added\nfoo.txt\n" + excludeLine + "\n"
+	if string(data) != want {
+		t.Errorf("exclude = %q, want %q", data, want)
+	}
+}

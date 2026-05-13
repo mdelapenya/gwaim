@@ -13,6 +13,7 @@ import (
 
 	"github.com/mdelapenya/biomelab/internal/agent"
 	"github.com/mdelapenya/biomelab/internal/git"
+	"github.com/mdelapenya/biomelab/internal/notes"
 	"github.com/mdelapenya/biomelab/internal/provider"
 	"github.com/mdelapenya/biomelab/internal/terminal"
 )
@@ -117,7 +118,13 @@ func buildKanbanCardContent(
 	}
 	branchLabel := monoText(prefix+wt.Branch, branchColor, true)
 	branchLabel.TextSize = scaledSize(12)
-	rows = append(rows, container.NewHBox(dot, branchLabel))
+	row := []fyne.CanvasObject{dot, branchLabel}
+	if notes.Exists(wt.Path) {
+		noteIcon := monoText(" 📝", colorYellow, false)
+		noteIcon.TextSize = scaledSize(10)
+		row = append(row, noteIcon)
+	}
+	rows = append(rows, container.NewHBox(row...))
 
 	// ── Row 2: ● agent-name (omitted when no agent) ─────────────────────
 	if len(agents) > 0 {
@@ -189,7 +196,7 @@ func newKanbanCardWrapper(inner *tappableCard) *kanbanCardWrapper {
 }
 
 func (w *kanbanCardWrapper) Tapped(e *fyne.PointEvent)          { w.inner.Tapped(e) }
-func (w *kanbanCardWrapper) TappedSecondary(_ *fyne.PointEvent) {}
+func (w *kanbanCardWrapper) TappedSecondary(e *fyne.PointEvent) { w.inner.TappedSecondary(e) }
 func (w *kanbanCardWrapper) CreateRenderer() fyne.WidgetRenderer {
 	return &kanbanCardWrapperRenderer{w: w}
 }
@@ -363,12 +370,18 @@ func (d *Dashboard) buildKanbanView() fyne.CanvasObject {
 					isSelected,
 				)
 				cardWtIdx := wtIdx // capture for closure
+				wtCopy := wt       // capture for closure
 				card := makeCard(content, isSelected, false, func() {
 					d.state.SelectedCard = cardWtIdx
 					if d.OnCardSelected != nil {
 						d.OnCardSelected(cardWtIdx)
 					}
 					d.Rebuild()
+				})
+				card.SetOnSecondaryTap(func() {
+					if d.OnNoteRequested != nil {
+						d.OnNoteRequested(wtCopy)
+					}
 				})
 				// Wrap each card so its MinSize.Width = 1, forcing the VScroll to
 				// size it to the column width rather than the natural text width.

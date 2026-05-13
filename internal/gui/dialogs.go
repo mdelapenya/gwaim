@@ -333,7 +333,14 @@ func displayLabel(k kits.Kit) string {
 	return fmt.Sprintf("%s  (%s)", name, k.Name)
 }
 
-func showSendPRConfirm(parent fyne.Window, branch string, remote git.RemoteInfo, existingPR *provider.PRInfo, onDone func(), onConfirm func()) dialog.Dialog {
+// showSendPRConfirm renders the final confirmation step of the PR send flow.
+// When hasNotes is true and the action creates a new PR (existingPR == nil),
+// a checkbox lets the user opt in to using their worktree notes — both the
+// PR title (from .biomelab/pr-title.md) and description (from .biomelab/
+// note.md) — instead of the commit-derived defaults. Defaults to checked
+// since the user took the trouble to prepare notes. onConfirm receives the
+// checkbox state — callers should ignore it when no checkbox was rendered.
+func showSendPRConfirm(parent fyne.Window, branch string, remote git.RemoteInfo, existingPR *provider.PRInfo, hasNotes bool, onDone func(), onConfirm func(useNotes bool)) dialog.Dialog {
 	var d *dialog.ConfirmDialog
 	var title, action string
 	body := container.NewVBox()
@@ -354,6 +361,14 @@ func showSendPRConfirm(parent fyne.Window, branch string, remote git.RemoteInfo,
 	body.Add(monoText("Branch: "+branch, colorBranch, true))
 	body.Add(monoText("Remote: "+remote.Name+" ("+remote.Repo+")", colorGray, false))
 
+	var noteCheck *widget.Check
+	if hasNotes && existingPR == nil {
+		body.Add(widget.NewSeparator())
+		noteCheck = widget.NewCheck("Use task notes for the PR title and description", nil)
+		noteCheck.SetChecked(true)
+		body.Add(noteCheck)
+	}
+
 	keyCap := newDialogKeyCapture(
 		func() { d.Confirm() },
 		func() { d.Hide() },
@@ -363,7 +378,8 @@ func showSendPRConfirm(parent fyne.Window, branch string, remote git.RemoteInfo,
 	d = dialog.NewCustomConfirm(title, action, "Cancel", content, func(ok bool) {
 		onDone()
 		if ok {
-			onConfirm()
+			useNotes := noteCheck != nil && noteCheck.Checked
+			onConfirm(useNotes)
 		}
 	}, parent)
 	d.Resize(dialogMinSize)
