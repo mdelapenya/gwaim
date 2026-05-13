@@ -33,6 +33,11 @@ type RefreshResult struct {
 	// in sbx ls (empty if none matched). Lets callers reconcile config when
 	// the stored sandbox name differs from what sbx actually reports.
 	SbxMatchedName string
+	// Generation is the repo mutation counter captured under the same lock
+	// that produced Worktrees. Apply-time staleness checks drop results
+	// whose Generation predates the last applied snapshot — this prevents
+	// a long-running refresh from resurrecting a card the user just deleted.
+	Generation uint64
 }
 
 // CLICheckResult carries the CLI availability check result.
@@ -43,14 +48,15 @@ type CLICheckResult struct {
 // QuickRefresh loads branch names only — no dirty status, no agents, no network.
 // Used for instant first render.
 func QuickRefresh(repo *git.Repository) RefreshResult {
-	wts, err := repo.ListWorktreesQuick()
+	snap, err := repo.SnapshotQuick()
 	if err != nil {
 		return RefreshResult{Err: err}
 	}
 	return RefreshResult{
-		Worktrees: wts,
-		Agents:    agent.DetectionResult{},
-		PRs:       provider.PRResult{},
+		Worktrees:  snap.Worktrees,
+		Agents:     agent.DetectionResult{},
+		PRs:        provider.PRResult{},
+		Generation: snap.Generation,
 	}
 }
 
@@ -65,10 +71,11 @@ func LocalRefresh(
 	procLister process.Lister,
 	sbxCandidates []string,
 ) RefreshResult {
-	wts, err := repo.ListWorktrees()
+	snap, err := repo.Snapshot()
 	if err != nil {
 		return RefreshResult{Err: err}
 	}
+	wts := snap.Worktrees
 
 	paths := make([]string, len(wts))
 	for i, wt := range wts {
@@ -121,6 +128,7 @@ func LocalRefresh(
 		SbxClientVer:   sbxVer.Client,
 		SbxServerVer:   sbxVer.Server,
 		SbxMatchedName: sbxMatched,
+		Generation:     snap.Generation,
 	}
 }
 
@@ -139,10 +147,11 @@ func NetworkRefresh(
 ) RefreshResult {
 	fetchErr := repo.Fetch()
 
-	wts, err := repo.ListWorktrees()
+	snap, err := repo.Snapshot()
 	if err != nil {
 		return RefreshResult{Err: err}
 	}
+	wts := snap.Worktrees
 
 	paths := make([]string, len(wts))
 	branches := make([]string, len(wts))
@@ -192,6 +201,7 @@ func NetworkRefresh(
 		FetchErr:       fetchErr,
 		SandboxStatus:  sbxStatus,
 		SbxMatchedName: sbxMatched,
+		Generation:     snap.Generation,
 	}
 }
 
@@ -209,7 +219,7 @@ func CardRefresh(
 ) RefreshResult {
 	fetchErr := repo.Fetch()
 
-	wts, err := repo.ListWorktrees()
+	snap, err := repo.Snapshot()
 	if err != nil {
 		return RefreshResult{Err: err}
 	}
@@ -233,13 +243,14 @@ func CardRefresh(
 	}
 
 	return RefreshResult{
-		Worktrees: wts,
-		Agents:    agents,
-		IDEs:      ides,
-		Terminals: terms,
-		PRs:       prs,
-		HasPRs:    true,
-		FetchErr:  fetchErr,
+		Worktrees:  snap.Worktrees,
+		Agents:     agents,
+		IDEs:       ides,
+		Terminals:  terms,
+		PRs:        prs,
+		HasPRs:     true,
+		FetchErr:   fetchErr,
+		Generation: snap.Generation,
 	}
 }
 

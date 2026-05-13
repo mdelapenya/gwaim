@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
@@ -32,7 +33,13 @@ const (
 )
 
 // Worktree holds the information about a single git worktree.
+//
+// Name is the git worktree identifier — the directory entry under
+// .git/worktrees/<Name>. It is the sanitized form of the branch (slashes
+// replaced with dashes), and is what RemoveWorktree expects. Empty for the
+// main worktree, which has no metadata dir.
 type Worktree struct {
+	Name     string
 	Path     string
 	Branch   string
 	IsMain   bool
@@ -47,6 +54,21 @@ type Repository struct {
 	repo     *gogit.Repository
 	wt       *xworktree.Worktree
 	repoRoot string
+
+	// generation increments each time the worktree set is mutated
+	// (Create/Remove/FetchPR). Snapshots capture this value under mu so
+	// refresh pipelines can drop results taken before a later mutation —
+	// otherwise a long-running refresh dispatched after a delete can
+	// resurrect a removed card with its pre-delete snapshot.
+	generation atomic.Uint64
+}
+
+// Snapshot is a worktree listing paired with the generation counter at the
+// moment the listing was taken. Apply-time staleness checks compare
+// Generation against the last-applied value to drop pre-mutation snapshots.
+type Snapshot struct {
+	Worktrees  []Worktree
+	Generation uint64
 }
 
 // OpenRepository opens the git repository at the given path.
@@ -228,7 +250,24 @@ func parseHeadFile(path string) (branch string, detached bool, ok bool) {
 func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.listWorktreesQuickLocked()
+}
 
+// SnapshotQuick returns a quick worktree listing together with the
+// generation counter at the moment of the snapshot, captured under the
+// same lock. Use this in refresh pipelines where downstream apply-time
+// checks need to detect pre-mutation snapshots.
+func (r *Repository) SnapshotQuick() (Snapshot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	wts, err := r.listWorktreesQuickLocked()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{Worktrees: wts, Generation: r.generation.Load()}, nil
+}
+
+func (r *Repository) listWorktreesQuickLocked() ([]Worktree, error) {
 	if err := r.reopen(); err != nil {
 		return nil, err
 	}
@@ -271,7 +310,7 @@ func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
 		if pathErr != nil {
 			wtPath = filepath.Join(r.worktreesDir(), name)
 		}
-		wt := Worktree{Path: wtPath}
+		wt := Worktree{Name: name, Path: wtPath}
 		headData, headErr := os.ReadFile(filepath.Join(wtMetaDir, "HEAD"))
 		if headErr != nil {
 			continue
@@ -293,7 +332,29 @@ func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
 func (r *Repository) ListWorktrees() ([]Worktree, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.listWorktreesLocked()
+}
 
+// Snapshot returns a full worktree listing together with the generation
+// counter at the moment of the snapshot, captured under the same lock.
+// See SnapshotQuick for the staleness-detection use case.
+func (r *Repository) Snapshot() (Snapshot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	wts, err := r.listWorktreesLocked()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{Worktrees: wts, Generation: r.generation.Load()}, nil
+}
+
+// Generation returns the current mutation counter for tests and callers
+// that need to observe whether a mutation has occurred.
+func (r *Repository) Generation() uint64 {
+	return r.generation.Load()
+}
+
+func (r *Repository) listWorktreesLocked() ([]Worktree, error) {
 	if err := r.reopen(); err != nil {
 		return nil, err
 	}
@@ -440,6 +501,7 @@ func (r *Repository) linkedWorktree(name string) (*Worktree, error) {
 	}
 
 	wt := &Worktree{
+		Name: name,
 		Path: wtPath,
 	}
 
@@ -494,6 +556,22 @@ func readWorktreePath(wtMetaDir string) (string, error) {
 	return filepath.Dir(gitdir), nil
 }
 
+// readWorktreeBranch reads the per-worktree HEAD file and returns the branch
+// short name (e.g. "ralph/issue-19"). Returns "" if HEAD is missing or
+// detached.
+func readWorktreeBranch(wtMetaDir string) string {
+	data, err := os.ReadFile(filepath.Join(wtMetaDir, "HEAD"))
+	if err != nil {
+		return ""
+	}
+	headStr := strings.TrimSpace(string(data))
+	ref, ok := strings.CutPrefix(headStr, "ref: ")
+	if !ok {
+		return ""
+	}
+	return strings.TrimPrefix(ref, "refs/heads/")
+}
+
 // worktreesDir returns the directory where biomelab stores linked worktrees.
 // Uses .biomelab-worktrees/ in the repo root. Users must add this directory
 // to their global gitignore (~/.config/git/ignore or core.excludesFile).
@@ -515,7 +593,11 @@ func (r *Repository) CreateWorktree(branchName string) error {
 	safe := sanitizeWorktreeName(branchName)
 	wtPath := filepath.Join(r.worktreesDir(), safe)
 	wtFS := osfs.New(wtPath)
-	return r.wt.Add(wtFS, safe)
+	if err := r.wt.Add(wtFS, safe); err != nil {
+		return err
+	}
+	r.generation.Add(1)
+	return nil
 }
 
 // Pull fetches from all remotes and merges into the main worktree's current branch.
@@ -660,6 +742,14 @@ func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string
 		return "", err
 	}
 
+	// Take the lock around the worktree creation + generation bump so a
+	// concurrent snapshot sees the new dir and the new gen as one event.
+	// Without this, a refresh that snapshots between cmd success and bump
+	// would carry a list with the new worktree under a pre-mutation gen,
+	// and could be incorrectly dropped as stale later.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Create the worktree using the git CLI.
 	// We sanitize slashes from the branch name only for the directory path;
 	// the local branch ref itself keeps the original name (e.g. "ralph/issue-19").
@@ -676,21 +766,35 @@ func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string
 		return "", fmt.Errorf("create worktree: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
+	r.generation.Add(1)
 	return wtPath, nil
 }
 
 // RemoveWorktree fully removes a linked worktree: removes the worktree directory,
 // removes the worktree metadata, deletes the branch, and prunes stale entries.
+//
+// name is the worktree identifier (the directory entry under .git/worktrees/),
+// not the branch name — they differ for branches that contain slashes (the
+// worktree name is the sanitized form). Pass Worktree.Name from ListWorktrees.
 func (r *Repository) RemoveWorktree(name string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Read the worktree path before removing metadata.
+	// Read the worktree path and branch name before removing metadata.
+	// The branch name read from HEAD may differ from `name` for branches
+	// with slashes (worktree name is sanitized, branch ref keeps slashes).
 	wtMetaDir := filepath.Join(r.repoRoot, ".git", "worktrees", name)
+	if _, err := os.Stat(wtMetaDir); err != nil {
+		return fmt.Errorf("worktree %q not found: %w", name, err)
+	}
 	wtPath, err := readWorktreePath(wtMetaDir)
 	if err != nil {
 		// Fallback: assume biomelab-worktrees directory.
 		wtPath = filepath.Join(r.worktreesDir(), name)
+	}
+	branchName := readWorktreeBranch(wtMetaDir)
+	if branchName == "" {
+		branchName = name
 	}
 
 	// Remove the worktree directory from disk.
@@ -706,15 +810,16 @@ func (r *Repository) RemoveWorktree(name string) error {
 	}
 
 	// Delete the local branch (config may not exist; ignore errors).
-	_ = r.repo.DeleteBranch(name)
+	_ = r.repo.DeleteBranch(branchName)
 	// Also delete the branch reference itself (may not exist; ignore errors).
-	refName := plumbing.NewBranchReferenceName(name)
+	refName := plumbing.NewBranchReferenceName(branchName)
 	_ = r.repo.Storer.RemoveReference(refName)
 
 	// Prune stale worktree entries by removing any metadata dirs
 	// whose gitdir points to a non-existent path.
 	r.pruneWorktrees()
 
+	r.generation.Add(1)
 	return nil
 }
 

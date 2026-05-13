@@ -135,62 +135,34 @@ func (d *Dashboard) Content() fyne.CanvasObject {
 
 // ApplyRefresh updates the dashboard state from a refresh result and rebuilds.
 // Must be called on the main thread (via fyne.Do).
-func (d *Dashboard) ApplyRefresh(result ops.RefreshResult) {
-	if result.Err != nil {
-		d.state.StatusMessage = ops.FirstNonEmptyLine(result.Err.Error())
-		d.state.StatusIsError = true
-		return
+//
+// Returns false when the result is dropped because its snapshot generation
+// predates the last applied snapshot (the refresh started before a mutation
+// the user has since performed). Callers should skip any downstream work
+// that derives from this snapshot when false is returned. Errors always
+// pass through so users see them.
+func (d *Dashboard) ApplyRefresh(result ops.RefreshResult) bool {
+	if !d.state.Apply(result) {
+		return false
 	}
-	if result.Worktrees != nil {
-		d.state.SetWorktrees(result.Worktrees)
-	}
-	if result.Agents != nil {
-		d.state.Agents = result.Agents
-	}
-	if result.IDEs != nil {
-		d.state.IDEs = result.IDEs
-	}
-	if result.Terminals != nil {
-		d.state.Terminals = result.Terminals
-	}
-	if result.HasPRs {
-		d.state.PRs = result.PRs
-		d.state.LastNetworkRefresh = time.Now()
-		d.state.NetFlash = true
-		// Clear flash after 1 second.
+	// Schedule the flash indicator clear after a brief delay. Lives here
+	// (not in RepoState.Apply) because it touches Fyne via fyne.Do/Rebuild
+	// and we want Apply to be a pure state mutation for testability.
+	if result.Err == nil {
 		time.AfterFunc(time.Second, func() {
 			fyne.Do(func() {
-				d.state.NetFlash = false
-				d.Rebuild()
-			})
-		})
-	} else {
-		d.state.LastLocalRefresh = time.Now()
-		d.state.LocalFlash = true
-		time.AfterFunc(time.Second, func() {
-			fyne.Do(func() {
-				d.state.LocalFlash = false
+				if result.HasPRs {
+					d.state.NetFlash = false
+				} else {
+					d.state.LocalFlash = false
+				}
 				d.Rebuild()
 			})
 		})
 	}
-	// Update sandbox status only when the refresh actually checked it.
-	if result.HasSbxStatus {
-		d.state.SandboxStatus = result.SandboxStatus
-	}
-	if result.SbxClientVer != "" {
-		d.state.SbxClientVersion = result.SbxClientVer
-	}
-	if result.SbxServerVer != "" {
-		d.state.SbxServerVersion = result.SbxServerVer
-	}
-	// NOTE: StatusMessage is intentionally NOT cleared on a successful
-	// refresh. Refreshes happen every couple of seconds; clearing here
-	// wipes user-action messages ("Created X", "Pull complete", CLI
-	// errors) almost immediately. Status stays until another setStatus
-	// call or an Esc dismisses it.
 
 	d.Rebuild()
+	return true
 }
 
 // EnsureVisible scrolls the linked cards area so the selected card is visible.

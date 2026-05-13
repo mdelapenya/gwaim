@@ -371,6 +371,152 @@ func TestRemoveWorktree_WithSlashedBranch(t *testing.T) {
 	}
 }
 
+// TestGenerationBumps verifies that the repo generation counter increments
+// on each successful worktree mutation, and is captured under the same lock
+// as the snapshot it labels. This is what lets refresh pipelines detect and
+// drop pre-mutation snapshots that would otherwise resurrect deleted cards.
+func TestGenerationBumps(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+
+	gen0 := repo.Generation()
+	snap0, err := repo.SnapshotQuick()
+	if err != nil {
+		t.Fatalf("SnapshotQuick: %v", err)
+	}
+	if snap0.Generation != gen0 {
+		t.Fatalf("SnapshotQuick.Generation = %d, Generation() = %d, want equal",
+			snap0.Generation, gen0)
+	}
+
+	if err := repo.CreateWorktree("feature-gen"); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	gen1 := repo.Generation()
+	if gen1 != gen0+1 {
+		t.Errorf("after Create: Generation = %d, want %d", gen1, gen0+1)
+	}
+
+	snap1, err := repo.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if snap1.Generation != gen1 {
+		t.Errorf("Snapshot.Generation = %d, want %d", snap1.Generation, gen1)
+	}
+
+	if err := repo.RemoveWorktree("feature-gen"); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+	gen2 := repo.Generation()
+	if gen2 != gen1+1 {
+		t.Errorf("after Remove: Generation = %d, want %d", gen2, gen1+1)
+	}
+
+	// A failed Remove must not bump.
+	if err := repo.RemoveWorktree("does-not-exist"); err == nil {
+		t.Fatal("expected error for unknown worktree, got nil")
+	}
+	if repo.Generation() != gen2 {
+		t.Errorf("Generation moved after failed Remove: %d, want %d",
+			repo.Generation(), gen2)
+	}
+
+	// A failed Create must not bump either: creating the same branch twice
+	// is the simplest way to force CreateWorktree to fail.
+	if err := repo.CreateWorktree("feature-gen-dup"); err != nil {
+		t.Fatalf("CreateWorktree (1st): %v", err)
+	}
+	gen3 := repo.Generation()
+	if err := repo.CreateWorktree("feature-gen-dup"); err == nil {
+		t.Fatal("expected error creating duplicate worktree, got nil")
+	}
+	if repo.Generation() != gen3 {
+		t.Errorf("Generation moved after failed Create: %d, want %d",
+			repo.Generation(), gen3)
+	}
+}
+
+// TestRemoveWorktree_GUIPath_SlashedBranch mirrors what the GUI does on
+// delete: list worktrees, take Worktree.Name (the .git/worktrees/<name>
+// entry — sanitized), and pass it to RemoveWorktree. The bug this guards
+// against is the caller passing wt.Branch (e.g. "ralph/issue-1456"), which
+// silently no-ops because no metadata dir exists by that name.
+func TestRemoveWorktree_GUIPath_SlashedBranch(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+
+	wtName := "ralph-issue-1456"
+	branchName := "ralph/issue-1456"
+	wtPath := setupWorktreeManually(t, dir, wtName, branchName)
+	t.Cleanup(func() { _ = os.RemoveAll(wtPath) })
+
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("failed to open: %v", err)
+	}
+
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees failed: %v", err)
+	}
+	var target *Worktree
+	for i := range wts {
+		if wts[i].Branch == branchName {
+			target = &wts[i]
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("worktree with branch %q not found", branchName)
+	}
+	if target.Name != wtName {
+		t.Fatalf("Worktree.Name = %q, want %q", target.Name, wtName)
+	}
+
+	if err := repo.RemoveWorktree(target.Name); err != nil {
+		t.Fatalf("RemoveWorktree failed: %v", err)
+	}
+
+	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
+		t.Errorf("worktree directory %q still exists", wtPath)
+	}
+	metaDir := filepath.Join(dir, ".git", "worktrees", wtName)
+	if _, err := os.Stat(metaDir); !os.IsNotExist(err) {
+		t.Errorf("metadata directory %q still exists", metaDir)
+	}
+	branchRef := filepath.Join(dir, ".git", "refs", "heads", branchName)
+	if _, err := os.Stat(branchRef); !os.IsNotExist(err) {
+		t.Errorf("branch ref %q still exists", branchRef)
+	}
+
+	wts, err = repo.ListWorktrees()
+	if err != nil {
+		t.Fatalf("ListWorktrees failed: %v", err)
+	}
+	for _, wt := range wts {
+		if wt.Branch == branchName {
+			t.Errorf("worktree with branch %q still present after removal", branchName)
+		}
+	}
+}
+
+// TestRemoveWorktree_UnknownName guards against the previous silent-success
+// behaviour: removing a name that has no metadata dir must error so the GUI
+// can surface it instead of leaving a ghost card on screen.
+func TestRemoveWorktree_UnknownName(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("failed to open: %v", err)
+	}
+	if err := repo.RemoveWorktree("does-not-exist"); err == nil {
+		t.Fatal("expected error for unknown worktree name, got nil")
+	}
+}
+
 func TestRemoveWorktree_Simple(t *testing.T) {
 	dir, _ := setupTestRepo(t)
 
