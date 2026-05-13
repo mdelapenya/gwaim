@@ -135,11 +135,23 @@ func (d *Dashboard) Content() fyne.CanvasObject {
 
 // ApplyRefresh updates the dashboard state from a refresh result and rebuilds.
 // Must be called on the main thread (via fyne.Do).
-func (d *Dashboard) ApplyRefresh(result ops.RefreshResult) {
+//
+// Returns false when the result is dropped because its snapshot generation
+// predates the last applied snapshot (the refresh started before a mutation
+// the user has since performed). Callers should skip any downstream work
+// that derives from this snapshot when false is returned. Errors always
+// pass through so users see them.
+func (d *Dashboard) ApplyRefresh(result ops.RefreshResult) bool {
+	if result.Err == nil && result.Generation < d.state.LastAppliedGen {
+		return false
+	}
+	if result.Generation > d.state.LastAppliedGen {
+		d.state.LastAppliedGen = result.Generation
+	}
 	if result.Err != nil {
 		d.state.StatusMessage = ops.FirstNonEmptyLine(result.Err.Error())
 		d.state.StatusIsError = true
-		return
+		return true
 	}
 	if result.Worktrees != nil {
 		d.state.SetWorktrees(result.Worktrees)
@@ -191,6 +203,7 @@ func (d *Dashboard) ApplyRefresh(result ops.RefreshResult) {
 	// call or an Esc dismisses it.
 
 	d.Rebuild()
+	return true
 }
 
 // EnsureVisible scrolls the linked cards area so the selected card is visible.

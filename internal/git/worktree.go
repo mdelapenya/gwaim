@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
@@ -53,6 +54,21 @@ type Repository struct {
 	repo     *gogit.Repository
 	wt       *xworktree.Worktree
 	repoRoot string
+
+	// generation increments each time the worktree set is mutated
+	// (Create/Remove/FetchPR). Snapshots capture this value under mu so
+	// refresh pipelines can drop results taken before a later mutation —
+	// otherwise a long-running refresh dispatched after a delete can
+	// resurrect a removed card with its pre-delete snapshot.
+	generation atomic.Uint64
+}
+
+// Snapshot is a worktree listing paired with the generation counter at the
+// moment the listing was taken. Apply-time staleness checks compare
+// Generation against the last-applied value to drop pre-mutation snapshots.
+type Snapshot struct {
+	Worktrees  []Worktree
+	Generation uint64
 }
 
 // OpenRepository opens the git repository at the given path.
@@ -234,7 +250,24 @@ func parseHeadFile(path string) (branch string, detached bool, ok bool) {
 func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.listWorktreesQuickLocked()
+}
 
+// SnapshotQuick returns a quick worktree listing together with the
+// generation counter at the moment of the snapshot, captured under the
+// same lock. Use this in refresh pipelines where downstream apply-time
+// checks need to detect pre-mutation snapshots.
+func (r *Repository) SnapshotQuick() (Snapshot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	wts, err := r.listWorktreesQuickLocked()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{Worktrees: wts, Generation: r.generation.Load()}, nil
+}
+
+func (r *Repository) listWorktreesQuickLocked() ([]Worktree, error) {
 	if err := r.reopen(); err != nil {
 		return nil, err
 	}
@@ -299,7 +332,29 @@ func (r *Repository) ListWorktreesQuick() ([]Worktree, error) {
 func (r *Repository) ListWorktrees() ([]Worktree, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.listWorktreesLocked()
+}
 
+// Snapshot returns a full worktree listing together with the generation
+// counter at the moment of the snapshot, captured under the same lock.
+// See SnapshotQuick for the staleness-detection use case.
+func (r *Repository) Snapshot() (Snapshot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	wts, err := r.listWorktreesLocked()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{Worktrees: wts, Generation: r.generation.Load()}, nil
+}
+
+// Generation returns the current mutation counter for tests and callers
+// that need to observe whether a mutation has occurred.
+func (r *Repository) Generation() uint64 {
+	return r.generation.Load()
+}
+
+func (r *Repository) listWorktreesLocked() ([]Worktree, error) {
 	if err := r.reopen(); err != nil {
 		return nil, err
 	}
@@ -538,7 +593,11 @@ func (r *Repository) CreateWorktree(branchName string) error {
 	safe := sanitizeWorktreeName(branchName)
 	wtPath := filepath.Join(r.worktreesDir(), safe)
 	wtFS := osfs.New(wtPath)
-	return r.wt.Add(wtFS, safe)
+	if err := r.wt.Add(wtFS, safe); err != nil {
+		return err
+	}
+	r.generation.Add(1)
+	return nil
 }
 
 // Pull fetches from all remotes and merges into the main worktree's current branch.
@@ -683,6 +742,14 @@ func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string
 		return "", err
 	}
 
+	// Take the lock around the worktree creation + generation bump so a
+	// concurrent snapshot sees the new dir and the new gen as one event.
+	// Without this, a refresh that snapshots between cmd success and bump
+	// would carry a list with the new worktree under a pre-mutation gen,
+	// and could be incorrectly dropped as stale later.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Create the worktree using the git CLI.
 	// We sanitize slashes from the branch name only for the directory path;
 	// the local branch ref itself keeps the original name (e.g. "ralph/issue-19").
@@ -699,6 +766,7 @@ func (r *Repository) FetchPR(prNumber int, branchName, remoteURL string) (string
 		return "", fmt.Errorf("create worktree: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
+	r.generation.Add(1)
 	return wtPath, nil
 }
 
@@ -751,6 +819,7 @@ func (r *Repository) RemoveWorktree(name string) error {
 	// whose gitdir points to a non-existent path.
 	r.pruneWorktrees()
 
+	r.generation.Add(1)
 	return nil
 }
 

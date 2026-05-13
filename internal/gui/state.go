@@ -49,6 +49,12 @@ type RepoState struct {
 	NetFlash           bool // true briefly after a network refresh (✓ indicator)
 	StatusMessage      string
 	StatusIsError      bool
+
+	// LastAppliedGen is the highest repo generation we've already applied
+	// from a refresh result. Refresh results carrying a lower generation
+	// are dropped to avoid a long-running refresh resurrecting a worktree
+	// the user just deleted (or hiding one they just created).
+	LastAppliedGen uint64
 }
 
 // SandboxCardInfo holds sandbox display data for a single card.

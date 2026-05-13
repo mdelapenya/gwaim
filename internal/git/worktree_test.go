@@ -371,6 +371,75 @@ func TestRemoveWorktree_WithSlashedBranch(t *testing.T) {
 	}
 }
 
+// TestGenerationBumps verifies that the repo generation counter increments
+// on each successful worktree mutation, and is captured under the same lock
+// as the snapshot it labels. This is what lets refresh pipelines detect and
+// drop pre-mutation snapshots that would otherwise resurrect deleted cards.
+func TestGenerationBumps(t *testing.T) {
+	dir, _ := setupTestRepo(t)
+	repo, err := OpenRepository(dir)
+	if err != nil {
+		t.Fatalf("OpenRepository: %v", err)
+	}
+
+	gen0 := repo.Generation()
+	snap0, err := repo.SnapshotQuick()
+	if err != nil {
+		t.Fatalf("SnapshotQuick: %v", err)
+	}
+	if snap0.Generation != gen0 {
+		t.Fatalf("SnapshotQuick.Generation = %d, Generation() = %d, want equal",
+			snap0.Generation, gen0)
+	}
+
+	if err := repo.CreateWorktree("feature-gen"); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	gen1 := repo.Generation()
+	if gen1 != gen0+1 {
+		t.Errorf("after Create: Generation = %d, want %d", gen1, gen0+1)
+	}
+
+	snap1, err := repo.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if snap1.Generation != gen1 {
+		t.Errorf("Snapshot.Generation = %d, want %d", snap1.Generation, gen1)
+	}
+
+	if err := repo.RemoveWorktree("feature-gen"); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+	gen2 := repo.Generation()
+	if gen2 != gen1+1 {
+		t.Errorf("after Remove: Generation = %d, want %d", gen2, gen1+1)
+	}
+
+	// A failed Remove must not bump.
+	if err := repo.RemoveWorktree("does-not-exist"); err == nil {
+		t.Fatal("expected error for unknown worktree, got nil")
+	}
+	if repo.Generation() != gen2 {
+		t.Errorf("Generation moved after failed Remove: %d, want %d",
+			repo.Generation(), gen2)
+	}
+
+	// A failed Create must not bump either: creating the same branch twice
+	// is the simplest way to force CreateWorktree to fail.
+	if err := repo.CreateWorktree("feature-gen-dup"); err != nil {
+		t.Fatalf("CreateWorktree (1st): %v", err)
+	}
+	gen3 := repo.Generation()
+	if err := repo.CreateWorktree("feature-gen-dup"); err == nil {
+		t.Fatal("expected error creating duplicate worktree, got nil")
+	}
+	if repo.Generation() != gen3 {
+		t.Errorf("Generation moved after failed Create: %d, want %d",
+			repo.Generation(), gen3)
+	}
+}
+
 // TestRemoveWorktree_GUIPath_SlashedBranch mirrors what the GUI does on
 // delete: list worktrees, take Worktree.Name (the .git/worktrees/<name>
 // entry — sanitized), and pass it to RemoveWorktree. The bug this guards

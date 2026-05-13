@@ -268,7 +268,12 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 				result.SbxMatchedName != re.state.ActiveMode.SandboxName {
 				a.reconcileSandboxName(re, re.state.ActiveMode.SandboxName, result.SbxMatchedName)
 			}
-			re.dashboard.ApplyRefresh(result)
+			if !re.dashboard.ApplyRefresh(result) {
+				// Snapshot predates a later mutation already applied —
+				// skip the worktree-count and sbx-status updates too, both
+				// derive from the same stale snapshot.
+				return
+			}
 
 			// Keep the left-panel worktree count in sync with refresh
 			// results so users see "tasks in flight" without opening
