@@ -735,42 +735,42 @@ func (a *App) handleSendPR() {
 		existingPR = re.state.PRs[wt.Branch]
 	}
 
-	notePath := ""
-	if notes.Exists(wt.Path) {
-		notePath = notes.Path(wt.Path)
-	}
-	noteTitle := ""
-	if t, ok, _ := notes.ReadTitle(wt.Path); ok {
-		noteTitle = t
-	}
-
 	done := a.openDialog()
-	a.sendPRFlow(re, wt.Branch, remotes, needsWarning, wt.IsDirty, hasStash, existingPR, noteTitle, notePath, done)
+	a.sendPRFlow(re, wt, remotes, needsWarning, wt.IsDirty, hasStash, existingPR, done)
 }
 
-func (a *App) sendPRFlow(re *repoEntry, branch string, remotes []git.RemoteInfo, needsWarning, dirty, hasStash bool, existingPR *provider.PRInfo, noteTitle, notePath string, done func()) {
+func (a *App) sendPRFlow(re *repoEntry, wt git.Worktree, remotes []git.RemoteInfo, needsWarning, dirty, hasStash bool, existingPR *provider.PRInfo, done func()) {
 	if needsWarning {
-		a.activeDialog = showSendPRDirtyWarning(a.window, branch, dirty, hasStash, done, func() {
-			a.sendPRSelectRemote(re, branch, remotes, existingPR, noteTitle, notePath, done)
+		a.activeDialog = showSendPRDirtyWarning(a.window, wt.Branch, dirty, hasStash, done, func() {
+			a.sendPRSelectRemote(re, wt, remotes, existingPR, done)
 		})
 		return
 	}
-	a.sendPRSelectRemote(re, branch, remotes, existingPR, noteTitle, notePath, done)
+	a.sendPRSelectRemote(re, wt, remotes, existingPR, done)
 }
 
-func (a *App) sendPRSelectRemote(re *repoEntry, branch string, remotes []git.RemoteInfo, existingPR *provider.PRInfo, noteTitle, notePath string, done func()) {
+func (a *App) sendPRSelectRemote(re *repoEntry, wt git.Worktree, remotes []git.RemoteInfo, existingPR *provider.PRInfo, done func()) {
 	if len(remotes) > 1 {
 		a.activeDialog = showSendPRRemoteSelection(a.window, remotes, done, func(idx int) {
-			a.sendPRConfirm(re, branch, remotes[idx], existingPR, noteTitle, notePath, done)
+			a.sendPRConfirm(re, wt, remotes[idx], existingPR, done)
 		})
 		return
 	}
-	a.sendPRConfirm(re, branch, remotes[0], existingPR, noteTitle, notePath, done)
+	a.sendPRConfirm(re, wt, remotes[0], existingPR, done)
 }
 
-func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo, existingPR *provider.PRInfo, noteTitle, notePath string, done func()) {
-	hasNotes := noteTitle != "" || notePath != ""
-	a.activeDialog = showSendPRConfirm(a.window, branch, remote, existingPR, hasNotes, done, func(useNotes bool) {
+func (a *App) sendPRConfirm(re *repoEntry, wt git.Worktree, remote git.RemoteInfo, existingPR *provider.PRInfo, done func()) {
+	// Resolve note state at dialog-open time only to decide whether to
+	// render the checkbox. At confirm time we re-resolve from disk so any
+	// edits/deletes made during a Review pass are honored.
+	hasNotes := notes.Exists(wt.Path)
+	if !hasNotes {
+		if _, ok, _ := notes.ReadTitle(wt.Path); ok {
+			hasNotes = true
+		}
+	}
+	onReview := func() { a.openNoteDialog(wt) }
+	a.activeDialog = showSendPRConfirm(a.window, wt.Branch, remote, existingPR, hasNotes, done, func(useNotes bool) {
 		pushOnly := existingPR != nil
 		if pushOnly {
 			a.setStatus("Pushing...", false)
@@ -780,12 +780,16 @@ func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo,
 		title := ""
 		bodyFile := ""
 		if useNotes {
-			title = noteTitle
-			bodyFile = notePath
+			if t, ok, _ := notes.ReadTitle(wt.Path); ok {
+				title = t
+			}
+			if notes.Exists(wt.Path) {
+				bodyFile = notes.Path(wt.Path)
+			}
 		}
 		go func() {
 			if pushOnly {
-				err := ops.PushBranch(re.repo, branch, remote)
+				err := ops.PushBranch(re.repo, wt.Branch, remote)
 				fyne.Do(func() {
 					if err != nil {
 						a.setStatus("Push failed: "+err.Error(), true)
@@ -795,7 +799,7 @@ func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo,
 					a.refreshMgr.TriggerNetwork()
 				})
 			} else {
-				result := ops.SendPR(re.repo, re.prProv, branch, remote, title, bodyFile)
+				result := ops.SendPR(re.repo, re.prProv, wt.Branch, remote, title, bodyFile)
 				fyne.Do(func() {
 					if result.Err != nil {
 						a.setStatus("PR creation failed: "+result.Err.Error(), true)
@@ -806,7 +810,7 @@ func (a *App) sendPRConfirm(re *repoEntry, branch string, remote git.RemoteInfo,
 				})
 			}
 		}()
-	})
+	}, onReview)
 }
 
 // --- Sandbox operations ---

@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,6 +109,68 @@ func writeTitle(content string) func(string) {
 	return func(dir string) {
 		_ = os.MkdirAll(filepath.Join(dir, ".biomelab"), 0o755)
 		_ = os.WriteFile(TitlePath(dir), []byte(content), 0o644)
+	}
+}
+
+func TestWriteTitleRoundTrip(t *testing.T) {
+	repo := initRepo(t)
+	if err := WriteTitle(repo, "feat(x): do thing"); err != nil {
+		t.Fatalf("WriteTitle: %v", err)
+	}
+	got, ok, err := ReadTitle(repo)
+	if err != nil {
+		t.Fatalf("ReadTitle: %v", err)
+	}
+	if !ok || got != "feat(x): do thing" {
+		t.Errorf("ReadTitle = %q, ok=%v, want %q, ok=true", got, ok, "feat(x): do thing")
+	}
+}
+
+func TestWriteTitleCollapsesNewlines(t *testing.T) {
+	repo := initRepo(t)
+	if err := WriteTitle(repo, "feat(x):\ndo\rthing\n"); err != nil {
+		t.Fatalf("WriteTitle: %v", err)
+	}
+	data, err := os.ReadFile(TitlePath(repo))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	want := "feat(x): do thing\n"
+	if string(data) != want {
+		t.Errorf("on-disk = %q, want %q", data, want)
+	}
+}
+
+func TestWriteTitleEmptyDeletes(t *testing.T) {
+	repo := initRepo(t)
+	if err := WriteTitle(repo, "feat(x): do thing"); err != nil {
+		t.Fatalf("WriteTitle: %v", err)
+	}
+	if _, err := os.Stat(TitlePath(repo)); err != nil {
+		t.Fatalf("title should exist before whitespace overwrite: %v", err)
+	}
+	if err := WriteTitle(repo, "  \n\t  "); err != nil {
+		t.Fatalf("WriteTitle whitespace: %v", err)
+	}
+	if _, err := os.Stat(TitlePath(repo)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("title should have been deleted, got err=%v", err)
+	}
+}
+
+func TestDeleteTitle(t *testing.T) {
+	repo := initRepo(t)
+	if err := WriteTitle(repo, "feat(x): do thing"); err != nil {
+		t.Fatalf("WriteTitle: %v", err)
+	}
+	if err := DeleteTitle(repo); err != nil {
+		t.Fatalf("DeleteTitle: %v", err)
+	}
+	if _, err := os.Stat(TitlePath(repo)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("title should be gone, got err=%v", err)
+	}
+	// Idempotent on missing.
+	if err := DeleteTitle(repo); err != nil {
+		t.Fatalf("DeleteTitle missing: %v", err)
 	}
 }
 

@@ -50,10 +50,26 @@ func (e *noteEntry) TypedKey(key *fyne.KeyEvent) {
 // window is non-modal: the main window stays usable while the editor is
 // open (useful for referencing a card while writing).
 func (a *App) openNoteDialog(wt git.Worktree) {
-	initial, _, _ := notes.Read(wt.Path)
-	noteExists := notes.Exists(wt.Path)
+	// Re-focus an existing editor for this worktree rather than spawning
+	// another window. Repeated 'm' presses or Review clicks just raise
+	// the open editor.
+	if existing, ok := a.noteWindows[wt.Path]; ok {
+		existing.RequestFocus()
+		return
+	}
+
+	initial, bodyExists, _ := notes.Read(wt.Path)
+	initialTitle, titleExists, _ := notes.ReadTitle(wt.Path)
+	noteExists := bodyExists || titleExists
 
 	w := a.fyneApp.NewWindow("Note — " + wt.Branch)
+	if a.noteWindows == nil {
+		a.noteWindows = make(map[string]fyne.Window)
+	}
+	a.noteWindows[wt.Path] = w
+	w.SetOnClosed(func() {
+		delete(a.noteWindows, wt.Path)
+	})
 
 	preview := widget.NewRichTextFromMarkdown(initial)
 	preview.Wrapping = fyne.TextWrapWord
@@ -63,6 +79,14 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	entry.OnChanged = func(s string) {
 		preview.ParseMarkdown(s)
 	}
+
+	titleEntry := newDialogEntry(func() { w.Close() })
+	titleEntry.SetPlaceHolder("Conventional Commits title — feat(scope): description")
+	titleEntry.SetText(initialTitle)
+
+	titleLabel := monoText("# PR title", colorBranch, true)
+	titleLabel.TextSize = scaledSize(11)
+	titleSection := container.NewVBox(titleLabel, titleEntry)
 
 	editorLabel := monoText("✎ Markdown", colorBranch, true)
 	editorLabel.TextSize = scaledSize(11)
@@ -76,15 +100,18 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	split.Offset = 0.5
 
 	saveAndClose := func() {
-		text := entry.Text
-		var err error
-		if strings.TrimSpace(text) == "" {
-			err = notes.Delete(wt.Path)
+		var titleErr, bodyErr error
+		titleErr = notes.WriteTitle(wt.Path, titleEntry.Text)
+		if strings.TrimSpace(entry.Text) == "" {
+			bodyErr = notes.Delete(wt.Path)
 		} else {
-			err = notes.Write(wt.Path, text)
+			bodyErr = notes.Write(wt.Path, entry.Text)
 		}
-		if err != nil {
-			a.setStatus("Note save failed: "+err.Error(), true)
+		switch {
+		case titleErr != nil:
+			a.setStatus("Note save failed (title): "+titleErr.Error(), true)
+		case bodyErr != nil:
+			a.setStatus("Note save failed (body): "+bodyErr.Error(), true)
 		}
 		if a.dashboard != nil {
 			a.dashboard.Rebuild()
@@ -102,13 +129,16 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 		deleteBtn := widget.NewButton("Delete note", func() {
 			dialog.ShowConfirm(
 				"Delete note?",
-				"This permanently removes the note for "+wt.Branch+".",
+				"This permanently removes the title and description for "+wt.Branch+".",
 				func(confirmed bool) {
 					if !confirmed {
 						return
 					}
 					if err := notes.Delete(wt.Path); err != nil {
 						a.setStatus("Note delete failed: "+err.Error(), true)
+					}
+					if err := notes.DeleteTitle(wt.Path); err != nil {
+						a.setStatus("Note delete failed (title): "+err.Error(), true)
 					}
 					if a.dashboard != nil {
 						a.dashboard.Rebuild()
@@ -123,7 +153,7 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	}
 	bottomRow := container.NewBorder(nil, nil, leftSide, rightButtons, nil)
 
-	content := container.NewBorder(nil, bottomRow, nil, nil, split)
+	content := container.NewBorder(titleSection, bottomRow, nil, nil, split)
 	w.SetContent(content)
 	w.Resize(noteWindowInitialSize)
 	w.CenterOnScreen()
@@ -139,5 +169,9 @@ func (a *App) openNoteDialog(wt git.Worktree) {
 	})
 
 	w.Show()
+	// When the editor is opened from another window's dialog overlay
+	// (e.g. the Review button in showSendPRConfirm), macOS can leave the
+	// new window behind the parent. Explicitly request focus.
+	w.RequestFocus()
 	w.Canvas().Focus(entry)
 }

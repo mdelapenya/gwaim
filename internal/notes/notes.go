@@ -38,6 +38,41 @@ func TitlePath(worktreeDir string) string {
 	return filepath.Join(worktreeDir, noteDir, prTitleFile)
 }
 
+// WriteTitle saves a single-line PR title to the title file. Embedded
+// newlines are collapsed to spaces and surrounding whitespace is trimmed,
+// so the on-disk file is always one line + trailing newline. An empty
+// (post-trim) input is treated as a delete. The .biomelab/ exclude entry
+// is ensured here too so the title file never leaks into git status.
+func WriteTitle(worktreeDir, title string) error {
+	// Collapse any whitespace runs (including embedded newlines and tabs)
+	// into single spaces so the on-disk file is always one clean line.
+	title = strings.Join(strings.Fields(title), " ")
+	if title == "" {
+		return DeleteTitle(worktreeDir)
+	}
+	dir := filepath.Join(worktreeDir, noteDir)
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		return fmt.Errorf("create note dir: %w", err)
+	}
+	if err := os.WriteFile(TitlePath(worktreeDir), []byte(title+"\n"), filePerm); err != nil {
+		return fmt.Errorf("write title: %w", err)
+	}
+	if err := ensureExcluded(worktreeDir); err != nil {
+		return fmt.Errorf("ensure excluded: %w", err)
+	}
+	return nil
+}
+
+// DeleteTitle removes the PR title file. Returns nil if the file doesn't
+// exist.
+func DeleteTitle(worktreeDir string) error {
+	err := os.Remove(TitlePath(worktreeDir))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 // ReadTitle returns the trimmed first non-empty line of the PR title file.
 // ok is false when the file does not exist or contains only whitespace; in
 // either case title is "" and err is nil. Only the first line is honored
