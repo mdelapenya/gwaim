@@ -2021,14 +2021,6 @@ footer {
   padding: .2rem .35rem
 }
 
-.kb-glow-pulse {
-  animation: gKeyGlowPulse 0.6s ease-out;
-}
-
-@keyframes gKeyGlowPulse {
-  0%   { box-shadow: 0 0 12px rgba(92, 225, 230, .8), inset 0 0 6px rgba(92, 225, 230, .4) }
-  100% { box-shadow: 0 0 0 rgba(92, 225, 230, 0), inset 0 0 0 rgba(92, 225, 230, 0) }
-}
 
 /* Smooth title transition */
 #kb-title {
