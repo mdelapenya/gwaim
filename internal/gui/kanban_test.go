@@ -10,10 +10,10 @@ import (
 	"github.com/mdelapenya/biomelab/internal/provider"
 )
 
-// TestKanbanStages_AlwaysFourStages verifies that KanbanStages always returns
-// exactly four stage buckets — even when some (or all) are empty — so that
-// buildKanbanView can always produce a complete four-column board.
-func TestKanbanStages_AlwaysFourStages(t *testing.T) {
+// TestKanbanStages_AlwaysFiveStages verifies that KanbanStages always returns
+// exactly five stage buckets — even when some (or all) are empty — so that
+// buildKanbanView can always produce a complete five-column board.
+func TestKanbanStages_AlwaysFiveStages(t *testing.T) {
 	cases := []struct {
 		name      string
 		worktrees []git.Worktree
@@ -29,19 +29,21 @@ func TestKanbanStages_AlwaysFourStages(t *testing.T) {
 			name: "all stages populated",
 			worktrees: []git.Worktree{
 				{Path: "/repo", Branch: "main", IsMain: true},
+				{Name: "closed-unmerged", Path: "/wt/closed-unmerged", Branch: "closed-unmerged"},
 				{Name: "created", Path: "/wt/created", Branch: "created"},
 				{Name: "sent", Path: "/wt/sent", Branch: "sent"},
 				{Name: "review", Path: "/wt/review", Branch: "review"},
 				{Name: "merged", Path: "/wt/merged", Branch: "merged"},
 			},
 			prs: provider.PRResult{
-				"sent":   {State: "open"},
-				"review": {State: "open", ReviewStatus: "approved"},
-				"merged": {State: "merged"},
+				"closed-unmerged": {State: "closed"},
+				"sent":            {State: "open"},
+				"review":          {State: "open", ReviewStatus: "approved"},
+				"merged":          {State: "merged"},
 			},
 		},
 		{
-			name: "only stage 0 (no PRs)",
+			name: "only stage 1 (no PRs)",
 			worktrees: []git.Worktree{
 				{Path: "/repo", Branch: "main", IsMain: true},
 				{Name: "wt1", Path: "/wt/wt1", Branch: "wt1"},
@@ -49,7 +51,7 @@ func TestKanbanStages_AlwaysFourStages(t *testing.T) {
 			},
 		},
 		{
-			name: "stages 0 and 1 only — stage 3 (PR Merged) is empty",
+			name: "stages 1 and 2 only — stages 0, 3, 4 are empty",
 			worktrees: []git.Worktree{
 				{Path: "/repo", Branch: "main", IsMain: true},
 				{Name: "no-pr", Path: "/wt/no-pr", Branch: "no-pr"},
@@ -83,11 +85,11 @@ func TestKanbanStages_AlwaysFourStages(t *testing.T) {
 	}
 }
 
-// TestBuildKanbanView_AlwaysFourColumns verifies that buildKanbanView always
-// produces a grid container with exactly four children — one per stage column —
+// TestBuildKanbanView_AlwaysFiveColumns verifies that buildKanbanView always
+// produces a grid container with exactly five children — one per stage column —
 // even when some stages are empty. Regression guard for the "lost-columns" bug
 // where an empty PR-Merged column would collapse and disappear from the board.
-func TestBuildKanbanView_AlwaysFourColumns(t *testing.T) {
+func TestBuildKanbanView_AlwaysFiveColumns(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
@@ -97,7 +99,7 @@ func TestBuildKanbanView_AlwaysFourColumns(t *testing.T) {
 		prs       provider.PRResult
 	}{
 		{
-			name: "stage 3 empty — only stages 0+1 occupied",
+			name: "stage 4 empty — only stages 1+2 occupied",
 			worktrees: []git.Worktree{
 				{Path: "/repo", Branch: "main", IsMain: true},
 				{Name: "no-pr", Path: "/wt/no-pr", Branch: "no-pr"},
@@ -115,18 +117,20 @@ func TestBuildKanbanView_AlwaysFourColumns(t *testing.T) {
 			},
 		},
 		{
-			name: "all four stages occupied",
+			name: "all five stages occupied",
 			worktrees: []git.Worktree{
 				{Path: "/repo", Branch: "main", IsMain: true},
+				{Name: "closed-unmerged", Path: "/wt/closed-unmerged", Branch: "closed-unmerged"},
 				{Name: "created", Path: "/wt/created", Branch: "created"},
 				{Name: "sent", Path: "/wt/sent", Branch: "sent"},
 				{Name: "review", Path: "/wt/review", Branch: "review"},
 				{Name: "merged", Path: "/wt/merged", Branch: "merged"},
 			},
 			prs: provider.PRResult{
-				"sent":   {State: "open"},
-				"review": {State: "open", ReviewStatus: "approved"},
-				"merged": {State: "merged"},
+				"closed-unmerged": {State: "closed"},
+				"sent":            {State: "open"},
+				"review":          {State: "open", ReviewStatus: "approved"},
+				"merged":          {State: "merged"},
 			},
 		},
 	}
@@ -147,8 +151,8 @@ func TestBuildKanbanView_AlwaysFourColumns(t *testing.T) {
 			if !ok {
 				t.Fatalf("buildKanbanView did not return *fyne.Container, got %T", result)
 			}
-			if got := len(grid.Objects); got != 4 {
-				t.Errorf("kanban grid has %d columns, want 4", got)
+			if got := len(grid.Objects); got != 5 {
+				t.Errorf("kanban grid has %d columns, want 5", got)
 			}
 			for i, obj := range grid.Objects {
 				if obj == nil {

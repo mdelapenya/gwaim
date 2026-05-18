@@ -312,11 +312,12 @@ to a vertical-resize indicator to signal grab affordance.
 
 ### 19. Kanban Board View
 
-The default view groups linked worktrees into four columns by PR/MR lifecycle stage:
+The default view groups linked worktrees into five columns by PR/MR lifecycle stage:
 
 | Column | Condition |
 |---|---|
-| **Created** | No PR associated, or PR is closed |
+| **Closed Unmerged** | PR exists but is closed and not merged |
+| **Created** | No PR associated |
 | **PR Sent** | Open PR (including drafts) with no review activity yet |
 | **PR In Review** | Open PR that has received at least one review (approved, changes requested, or commented) |
 | **PR Merged** | PR has been merged |

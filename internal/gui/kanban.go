@@ -216,31 +216,35 @@ func (r *kanbanCardWrapperRenderer) Refresh()                     { r.w.inner.Re
 func (r *kanbanCardWrapperRenderer) Destroy()                     {}
 func (r *kanbanCardWrapperRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.w.inner} }
 
-// kanbanStageOf returns the kanban column index (0–3) for a worktree based on
+// kanbanStageOf returns the kanban column index (0–4) for a worktree based on
 // its PR/MR state and review status.
 //
-//	0 = Created   — no PR, or PR is closed
-//	1 = PR Sent   — open PR with no review activity yet
-//	2 = PR In Review — open PR that has at least one review
-//	3 = PR Merged — PR has been merged
+//	0 = Closed Unmerged — PR is closed but not merged
+//	1 = Created   — no PR
+//	2 = PR Sent   — open PR with no review activity yet
+//	3 = PR In Review — open PR that has at least one review
+//	4 = PR Merged — PR has been merged
 func kanbanStageOf(pr *provider.PRInfo) int {
-	if pr == nil || pr.State == "closed" {
-		return 0
+	if pr == nil {
+		return 1
 	}
 	switch pr.State {
+	case "closed":
+		return 0
 	case "merged":
-		return 3
+		return 4
 	case "open":
 		if pr.ReviewStatus != "" {
-			return 2
+			return 3
 		}
-		return 1
+		return 2
 	default:
-		return 0
+		return 1
 	}
 }
 
-var kanbanColumnTitles = [4]string{
+var kanbanColumnTitles = [5]string{
+	"Closed Unmerged",
 	"Created",
 	"PR Sent",
 	"PR In Review",
@@ -251,12 +255,14 @@ var kanbanColumnTitles = [4]string{
 func kanbanColumnColor(stage int) color.Color {
 	switch stage {
 	case 0:
-		return colorGray
+		return colorRed
 	case 1:
-		return colorBlue
+		return colorGray
 	case 2:
-		return colorYellow
+		return colorBlue
 	case 3:
+		return colorYellow
+	case 4:
 		return colorPurple
 	default:
 		return colorGray
@@ -266,11 +272,13 @@ func kanbanColumnColor(stage int) color.Color {
 // kanbanColumnBgColor returns a subtle body-tint for the column background.
 func kanbanColumnBgColor(stage int) color.Color {
 	switch stage {
-	case 1:
-		return color.NRGBA{R: 0x69, G: 0xa7, B: 0xff, A: 0x1a} // blue  ~10 %
+	case 0:
+		return color.NRGBA{R: 0xff, G: 0x69, B: 0x69, A: 0x1a} // red    ~10 %
 	case 2:
-		return color.NRGBA{R: 0xf3, G: 0xd6, B: 0x6b, A: 0x1a} // yellow ~10 %
+		return color.NRGBA{R: 0x69, G: 0xa7, B: 0xff, A: 0x1a} // blue   ~10 %
 	case 3:
+		return color.NRGBA{R: 0xf3, G: 0xd6, B: 0x6b, A: 0x1a} // yellow ~10 %
+	case 4:
 		return color.NRGBA{R: 0xca, G: 0x79, B: 0xff, A: 0x1a} // purple ~10 %
 	default:
 		return color.NRGBA{R: 0x70, G: 0x83, B: 0x94, A: 0x12} // gray   ~ 7 %
@@ -280,21 +288,35 @@ func kanbanColumnBgColor(stage int) color.Color {
 // kanbanColumnHeaderBgColor returns a stronger header tint for a kanban column.
 func kanbanColumnHeaderBgColor(stage int) color.Color {
 	switch stage {
-	case 1:
-		return color.NRGBA{R: 0x69, G: 0xa7, B: 0xff, A: 0x38} // blue  ~22 %
+	case 0:
+		return color.NRGBA{R: 0xff, G: 0x69, B: 0x69, A: 0x38} // red    ~22 %
 	case 2:
-		return color.NRGBA{R: 0xf3, G: 0xd6, B: 0x6b, A: 0x38} // yellow ~22 %
+		return color.NRGBA{R: 0x69, G: 0xa7, B: 0xff, A: 0x38} // blue   ~22 %
 	case 3:
+		return color.NRGBA{R: 0xf3, G: 0xd6, B: 0x6b, A: 0x38} // yellow ~22 %
+	case 4:
 		return color.NRGBA{R: 0xca, G: 0x79, B: 0xff, A: 0x38} // purple ~22 %
 	default:
 		return color.NRGBA{R: 0x70, G: 0x83, B: 0x94, A: 0x28} // gray  ~16 %
 	}
 }
 
+// makeStagePill returns a small coloured pill showing the PR lifecycle stage label.
+// Background is the stage accent at ~16% opacity; text is the full accent color.
+func makeStagePill(stage int) fyne.CanvasObject {
+	accent := kanbanColumnColor(stage)
+	nrgba := accent.(color.NRGBA)
+	bg := canvas.NewRectangle(color.NRGBA{R: nrgba.R, G: nrgba.G, B: nrgba.B, A: 0x28})
+	bg.CornerRadius = 4
+	label := monoText(kanbanColumnTitles[stage], accent, false)
+	label.TextSize = scaledSize(9)
+	return container.NewStack(bg, container.NewPadded(label))
+}
+
 // KanbanStages groups the 1-based linked-worktree indices (matching SelectedCard)
-// into four slices, one per kanban column. Index 0 (main) is never included.
-func (d *Dashboard) KanbanStages() [4][]int {
-	var stages [4][]int
+// into five slices, one per kanban column. Index 0 (main) is never included.
+func (d *Dashboard) KanbanStages() [5][]int {
+	var stages [5][]int
 	linked := d.state.LinkedWorktrees()
 	for i, wt := range linked {
 		idx := i + 1 // 1-based: index 0 is the main worktree
@@ -317,7 +339,7 @@ func (d *Dashboard) KanbanColumnOf(cardIdx int) int {
 
 // KanbanRowOf returns the 0-based row within the column for the given 1-based
 // worktree index. Returns 0 if the card is not found in the column.
-func (d *Dashboard) KanbanRowOf(cardIdx int, stages [4][]int) int {
+func (d *Dashboard) KanbanRowOf(cardIdx int, stages [5][]int) int {
 	col := d.KanbanColumnOf(cardIdx)
 	for row, idx := range stages[col] {
 		if idx == cardIdx {
@@ -327,7 +349,7 @@ func (d *Dashboard) KanbanRowOf(cardIdx int, stages [4][]int) int {
 	return 0
 }
 
-// buildKanbanView constructs the four-column kanban board for linked worktrees.
+// buildKanbanView constructs the five-column kanban board for linked worktrees.
 // Each column is wrapped in a coloured border rectangle (matching the website
 // kb-col design): subtle body tint + stronger header tint + coloured stroke.
 // Cards scroll vertically inside each column via NewVScroll, which constrains
@@ -335,7 +357,7 @@ func (d *Dashboard) KanbanRowOf(cardIdx int, stages [4][]int) int {
 func (d *Dashboard) buildKanbanView() fyne.CanvasObject {
 	stages := d.KanbanStages()
 
-	cols := make([]fyne.CanvasObject, 4)
+	cols := make([]fyne.CanvasObject, 5)
 	for si, stageIndices := range stages {
 		accentColor := kanbanColumnColor(si)
 
@@ -404,5 +426,5 @@ func (d *Dashboard) buildKanbanView() fyne.CanvasObject {
 		cols[si] = container.NewStack(colBg, container.NewPadded(colContent))
 	}
 
-	return container.NewGridWithColumns(4, cols...)
+	return container.NewGridWithColumns(5, cols...)
 }

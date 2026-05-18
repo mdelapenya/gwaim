@@ -121,7 +121,13 @@ func buildCardContent(
 	} else if wt.Detached {
 		row = append(row, monoText(" (detached)", colorDimGray, false))
 	}
-	items = append(items, container.NewHBox(row...))
+	branchRow := container.NewHBox(row...)
+	if !wt.IsMain {
+		items = append(items, container.NewBorder(nil, nil, nil,
+			makeStagePill(kanbanStageOf(pr)), branchRow))
+	} else {
+		items = append(items, branchRow)
+	}
 
 	// Path: prefix-truncated dynamically so it never overflows the card,
 	// regardless of how narrow the card becomes when the window is resized.
