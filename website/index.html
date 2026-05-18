@@ -684,7 +684,7 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
         <div class="kb-footer-hint">
           <span class="kb-footer-mode">Try <kbd class="kb-g-glow">g</kbd> for grid view</span>
           <span class="kb-footer-sep">·</span>
-          <span class="kb-footer-cta">Click any card to see the agent conversation</span>
+          <span class="kb-footer-cta">Click a card to select it — then explore the keyboard shortcuts below</span>
         </div>
       </div><!-- /.kanban-diagram-html -->
     </div>
@@ -817,11 +817,43 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
       </header>
       <div class="rgt-modal-body"></div>
       <footer class="rgt-modal-foot">
-        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> to close · click any card to reopen</span>
+        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> to close · select a card and press <kbd>l</kbd> to reopen</span>
         <button class="rgt-modal-export">Export JSON…</button>
       </footer>
     </div>
   </div>
+
+  <!-- Note editor modal — opens via 'm' key or the m key-cap click.
+       Mirrors the GUI note editor: Markdown textarea on the left, live
+       preview on the right. Reuses the regent modal's overlay / window
+       chrome via shared classes. -->
+  <div id="note-modal" class="rgt-modal note-modal-window" hidden role="dialog" aria-modal="true" aria-labelledby="note-modal-title">
+    <div class="rgt-modal-overlay" data-note-close></div>
+    <div class="rgt-modal-window">
+      <header class="rgt-modal-head">
+        <h3 id="note-modal-title">Note</h3>
+        <button class="rgt-modal-close" data-note-close aria-label="Close">×</button>
+      </header>
+      <div class="rgt-modal-body">
+        <div class="note-split">
+          <div class="note-pane">
+            <div class="note-pane-head">✎ Markdown</div>
+            <textarea id="note-entry" spellcheck="false"></textarea>
+          </div>
+          <div class="note-pane">
+            <div class="note-pane-head">👁 Preview</div>
+            <div id="note-preview"></div>
+          </div>
+        </div>
+      </div>
+      <footer class="rgt-modal-foot">
+        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> to close · saved as <kbd>.biomelab/note.md</kbd></span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Toast for transient feedback from keyboard simulator actions. -->
+  <div id="kb-toast" class="kb-toast" hidden role="status" aria-live="polite"></div>
 
   <script defer src="js/main.js"></script>
 </body>

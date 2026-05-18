@@ -176,12 +176,11 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
     if (e.key === 'Escape') close();
   });
 
-  document.querySelectorAll('.kb-card[data-kb]').forEach(function (card) {
-    card.addEventListener('click', function (e) {
-      e.preventDefault();
-      open(card.dataset.kb);
-    });
-  });
+  // Card click handlers are attached by the keyboard simulator IIFE
+  // (its wireCard) so existing and dynamically-created cards share
+  // one wiring path. We just expose open() here for it to call.
+  window.kbDemo = window.kbDemo || {};
+  window.kbDemo.openLog = open;
 
   body.addEventListener('click', function (e) {
     var btn = e.target.closest('.rgt-tools-toggle');
@@ -365,4 +364,260 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
       setView(diagram.classList.contains('kb-view-grid') ? 'kanban' : 'grid');
     }
   });
+})();
+
+// ────────────────────────────────────────────────────────────────────
+// Keyboard simulator — make the keyboard grid an interactive demo.
+// Each key fires whether you press it on the keyboard OR click its
+// key-cap in the "Keyboard-First" grid. Real animations for the keys
+// that have visual analogues on the kanban board (c, d, r), real
+// modals for m (note editor) and l (regent log), and educational
+// toasts for the rest (e, f, n, p, P, s, S, ⏎).
+// ────────────────────────────────────────────────────────────────────
+(function () {
+  var board = document.querySelector('.kanban-diagram-html');
+  if (!board) return;
+
+  var STATE = {
+    selectedCardId: null,
+    nextSampleN: 1
+  };
+
+  function findCard(id) {
+    return document.querySelector('.kb-card[data-kb="' + cssEsc(id) + '"]');
+  }
+  function cssEsc(s) {
+    return String(s).replace(/[\\"]/g, '\\$&');
+  }
+
+  function selectCard(id) {
+    document.querySelectorAll('.kb-card.kb-selected').forEach(function (el) {
+      el.classList.remove('kb-selected');
+    });
+    if (id) {
+      var c = findCard(id);
+      if (c) c.classList.add('kb-selected');
+    }
+    STATE.selectedCardId = id;
+  }
+
+  // Toast — bottom-right transient feedback for actions that don't
+  // have a visual analogue on the board.
+  var toast = document.getElementById('kb-toast');
+  var toastTimer = null;
+  function showToast(msg) {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.removeAttribute('hidden');
+    requestAnimationFrame(function () { toast.classList.add('open'); });
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      toast.classList.remove('open');
+      setTimeout(function () { toast.setAttribute('hidden', ''); }, 220);
+    }, 1700);
+  }
+
+  // ── Actions ────────────────────────────────────────────────────
+
+  function createCard() {
+    var col = document.querySelector('.kb-col-created');
+    if (!col) return;
+    var n = STATE.nextSampleN++;
+    var branch = 'feat/demo-' + n;
+    var card = document.createElement('div');
+    card.className = 'kb-card kb-enter';
+    card.dataset.kb = branch;
+    card.innerHTML =
+      '<div class="kb-card-top">'
+      + '<span class="kb-dot kb-dot-gray"></span>'
+      + '<span class="kb-branch">' + branch + '</span>'
+      + '</div>'
+      + '<div class="kb-card-meta"><span class="kb-agent kb-agent-green">● claude</span></div>'
+      + '<div class="kb-card-status"><span class="kb-no-pr">no PR</span></div>';
+    col.appendChild(card);
+    wireCard(card);
+    // Bump the column count badge if present
+    var badge = col.querySelector('.kb-col-badge');
+    if (badge) badge.textContent = String(parseInt(badge.textContent || '0', 10) + 1);
+    selectCard(branch);
+    showToast('Created worktree: ' + branch);
+    setTimeout(function () { card.classList.remove('kb-enter'); }, 280);
+  }
+
+  function deleteCard() {
+    if (!STATE.selectedCardId) { showToast('Select a card first (click one)'); return; }
+    var c = findCard(STATE.selectedCardId);
+    if (!c) return;
+    showToast('Deleted worktree: ' + STATE.selectedCardId);
+    var col = c.closest('.kb-col');
+    c.classList.add('kb-exit');
+    setTimeout(function () {
+      c.remove();
+      if (col) {
+        var badge = col.querySelector('.kb-col-badge');
+        if (badge) {
+          var n = parseInt(badge.textContent || '0', 10) - 1;
+          badge.textContent = String(Math.max(n, 0));
+        }
+      }
+    }, 280);
+    selectCard(null);
+  }
+
+  function refreshAll() {
+    document.querySelectorAll('.kb-card').forEach(function (c) {
+      c.classList.add('kb-pulse');
+      setTimeout(function () { c.classList.remove('kb-pulse'); }, 620);
+    });
+    showToast('Refreshing cards…');
+  }
+
+  function openLogModal() {
+    if (!STATE.selectedCardId) { showToast('Select a card first (click one)'); return; }
+    if (window.kbDemo && window.kbDemo.openLog) {
+      window.kbDemo.openLog(STATE.selectedCardId);
+    }
+  }
+
+  function openNoteModal() {
+    if (!STATE.selectedCardId) { showToast('Select a card first (click one)'); return; }
+    var modal = document.getElementById('note-modal');
+    if (!modal) return;
+    document.getElementById('note-modal-title').textContent = 'Note — ' + STATE.selectedCardId;
+    var entry = document.getElementById('note-entry');
+    var preview = document.getElementById('note-preview');
+    var sample =
+      '# ' + STATE.selectedCardId + '\n\n'
+      + '**TODO** — write the task description here.\n\n'
+      + '- Use *Markdown* — bold, italic, `inline code`\n'
+      + '- Live preview on the right →\n'
+      + '- Saved alongside the worktree as `.biomelab/note.md`\n\n'
+      + 'When you `Shift+P` to send the PR, biomelab uses this note as the body.';
+    entry.value = sample;
+    preview.innerHTML = renderMd(sample);
+    entry.oninput = function () { preview.innerHTML = renderMd(entry.value); };
+    modal.removeAttribute('hidden');
+    document.body.classList.add('rgt-modal-open');
+    requestAnimationFrame(function () { modal.classList.add('open'); });
+  }
+
+  function closeNoteModal() {
+    var modal = document.getElementById('note-modal');
+    if (!modal) return;
+    modal.classList.remove('open');
+    document.body.classList.remove('rgt-modal-open');
+    setTimeout(function () { modal.setAttribute('hidden', ''); }, 200);
+  }
+
+  function renderMd(s) {
+    var esc = String(s).replace(/[&<>"']/g, function (c) {
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+    return esc
+      .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+      .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`(.+?)`/g, '<code>$1</code>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>(?:\n|$))+/g, function (m) { return '<ul>' + m.replace(/\n/g, '') + '</ul>'; })
+      .replace(/\n/g, '<br>');
+  }
+
+  // ── Wire existing + future cards ───────────────────────────────
+
+  function wireCard(card) {
+    // Click SELECTS only (matches biomelab's GUI behavior: select-
+    // then-act). To view the log the user presses 'l' (keyboard or
+    // the l key-cap in the Keyboard-First grid). Capture phase keeps
+    // the selection from being clobbered by any sibling listener.
+    card.addEventListener('click', function () {
+      selectCard(card.dataset.kb);
+    }, true);
+  }
+  document.querySelectorAll('.kb-card[data-kb]').forEach(wireCard);
+
+  // ── Keyboard handler ───────────────────────────────────────────
+
+  document.addEventListener('keydown', function (e) {
+    var tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    var rgtModal = document.getElementById('rgt-modal');
+    var noteModal = document.getElementById('note-modal');
+    if (rgtModal && !rgtModal.hasAttribute('hidden')) return;
+    if (noteModal && !noteModal.hasAttribute('hidden')) {
+      if (e.key === 'Escape') closeNoteModal();
+      return;
+    }
+
+    switch (e.key) {
+      case 'c': case 'C': createCard();      e.preventDefault(); break;
+      case 'd': case 'D': deleteCard();      e.preventDefault(); break;
+      case 'r': case 'R': refreshAll();      e.preventDefault(); break;
+      case 'm': case 'M': openNoteModal();   e.preventDefault(); break;
+      case 'l': case 'L': openLogModal();    e.preventDefault(); break;
+      // Toast-only actions (educational reactions for keys without
+      // their own animation on the demo board)
+      case 'e': showToast('Opening worktree in editor…');             e.preventDefault(); break;
+      case 'f': showToast('Fetching PR into a new worktree…');        e.preventDefault(); break;
+      case 'n': showToast('Creating sandbox for this worktree…');     e.preventDefault(); break;
+      case 'p': showToast('Pulling from remote…');                    e.preventDefault(); break;
+      case 'P': showToast('Send PR flow (multi-step in the app)');    e.preventDefault(); break;
+      case 's': showToast('Starting stopped sandbox…');               e.preventDefault(); break;
+      case 'S': showToast('Stopping running sandbox…');               e.preventDefault(); break;
+      case 'Enter': showToast('Opening terminal for this worktree…'); e.preventDefault(); break;
+    }
+  });
+
+  // ── Click handlers for the key-caps in the "Keyboard-First" grid ─
+
+  function fireByCap(text) {
+    switch (text) {
+      case 'c': createCard(); return;
+      case 'd': deleteCard(); return;
+      case 'r': refreshAll(); return;
+      case 'm': openNoteModal(); return;
+      case 'l': openLogModal(); return;
+      case 'e': showToast('Opening worktree in editor…'); return;
+      case 'f': showToast('Fetching PR into a new worktree…'); return;
+      case 'n': showToast('Creating sandbox for this worktree…'); return;
+      case 'p': showToast('Pulling from remote…'); return;
+      case 'P': showToast('Send PR flow (multi-step in the app)'); return;
+      case 's': showToast('Starting stopped sandbox…'); return;
+      case 'S': showToast('Stopping running sandbox…'); return;
+      case '⏎': showToast('Opening terminal for this worktree…'); return;
+      case 'g':
+        // Delegate to the existing kanban toggle by dispatching a
+        // keyboard event the toggle IIFE already listens for.
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true }));
+        return;
+    }
+  }
+  document.querySelectorAll('.keyboard-grid .key-item').forEach(function (item) {
+    var cap = item.querySelector('.key-cap');
+    if (!cap) return;
+    item.style.cursor = 'pointer';
+    item.addEventListener('click', function () {
+      fireByCap(cap.textContent.trim());
+    });
+  });
+
+  // ── Note modal close handlers ──────────────────────────────────
+
+  document.querySelectorAll('[data-note-close]').forEach(function (el) {
+    el.addEventListener('click', closeNoteModal);
+  });
+  // Esc while typing in the textarea: the global keydown handler bows
+  // out on TEXTAREA focus, so add a dedicated Escape on the entry so
+  // the user doesn't have to mouse to the × button to close.
+  var noteEntry = document.getElementById('note-entry');
+  if (noteEntry) {
+    noteEntry.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeNoteModal();
+      }
+    });
+  }
 })();
