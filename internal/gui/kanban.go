@@ -301,6 +301,18 @@ func kanbanColumnHeaderBgColor(stage int) color.Color {
 	}
 }
 
+// makeStagePill returns a small coloured pill showing the PR lifecycle stage label.
+// Background is the stage accent at ~16% opacity; text is the full accent color.
+func makeStagePill(stage int) fyne.CanvasObject {
+	accent := kanbanColumnColor(stage)
+	nrgba := accent.(color.NRGBA)
+	bg := canvas.NewRectangle(color.NRGBA{R: nrgba.R, G: nrgba.G, B: nrgba.B, A: 0x28})
+	bg.CornerRadius = 4
+	label := monoText(kanbanColumnTitles[stage], accent, false)
+	label.TextSize = scaledSize(9)
+	return container.NewStack(bg, container.NewPadded(label))
+}
+
 // KanbanStages groups the 1-based linked-worktree indices (matching SelectedCard)
 // into five slices, one per kanban column. Index 0 (main) is never included.
 func (d *Dashboard) KanbanStages() [5][]int {
