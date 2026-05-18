@@ -353,12 +353,14 @@ func (d *Dashboard) buildKanbanView() fyne.CanvasObject {
 		headerSection := container.NewVBox(header, widget.NewSeparator())
 
 		// ── Cards (vertically scrollable, width-constrained) ─────────────
-		var cardArea fyne.CanvasObject
+		// Always use VScroll so every column — including empty ones — has a
+		// guaranteed minimum height (Fyne's scrollContainerMinSize = 32 px).
+		// A bare container.NewPadded around a canvas.Text can report a near-zero
+		// MinSize before first render, collapsing the column in the grid layout.
+		var cardItems []fyne.CanvasObject
 		if len(stageIndices) == 0 {
-			empty := monoText("—", colorDimGray, false)
-			cardArea = container.NewPadded(empty)
+			cardItems = []fyne.CanvasObject{container.NewPadded(monoText("—", colorDimGray, false))}
 		} else {
-			var cardItems []fyne.CanvasObject
 			for _, wtIdx := range stageIndices {
 				wt := d.state.Worktrees[wtIdx]
 				isSelected := d.state.SelectedCard == wtIdx
@@ -387,8 +389,8 @@ func (d *Dashboard) buildKanbanView() fyne.CanvasObject {
 				// size it to the column width rather than the natural text width.
 				cardItems = append(cardItems, newKanbanCardWrapper(card))
 			}
-			cardArea = container.NewVScroll(container.NewVBox(cardItems...))
 		}
+		cardArea := container.NewVScroll(container.NewVBox(cardItems...))
 
 		// ── Column border + background rectangle ─────────────────────────
 		// Mirrors the website's .kb-col: coloured stroke + subtle body tint.
