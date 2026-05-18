@@ -972,10 +972,6 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         if (e.key === 'g' || e.key === 'G') {
           setView(diagram.classList.contains('kb-view-grid') ? 'kanban' : 'grid');
-          // Trigger glow animation on title as feedback
-          title.classList.remove('kb-glow-pulse');
-          void title.offsetWidth; // Force reflow to restart animation
-          title.classList.add('kb-glow-pulse');
         }
       });
     })();
