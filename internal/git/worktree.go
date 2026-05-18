@@ -18,6 +18,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
+
+	"github.com/mdelapenya/biomelab/internal/notes"
 )
 
 // SyncStatus indicates whether a branch is up-to-date with its remote tracking branch.
@@ -615,6 +617,9 @@ func (r *Repository) CreateWorktree(branchName string) error {
 	if err := r.wt.Add(wtFS, safe); err != nil {
 		return err
 	}
+	// Ensure .biomelab dir exists for new worktree so external tools can write
+	// files without needing to create the directory themselves.
+	_ = r.ensureBiomelabDir(wtPath)
 	r.generation.Add(1)
 	return nil
 }
@@ -983,6 +988,27 @@ func (r *Repository) HasStash() (bool, error) {
 		return false, nil // no stash ref means no stash entries
 	}
 	return true, nil
+}
+
+// ensureBiomelabDir ensures the .biomelab directory exists in the given
+// worktree path so external tools can write files without creating it themselves.
+// Errors are silently ignored as this is a best-effort initialization.
+func (r *Repository) ensureBiomelabDir(wtPath string) error {
+	return notes.EnsureDir(wtPath)
+}
+
+// MigrateWorktreeDirs ensures .biomelab exists for all worktrees in the
+// repository (migration for older projects created before this feature).
+// This ensures external tools like pr-scribe can write files to the directory.
+// Errors are silently ignored as this is a best-effort background task.
+func (r *Repository) MigrateWorktreeDirs() {
+	wts, err := r.ListWorktrees()
+	if err != nil {
+		return
+	}
+	for _, wt := range wts {
+		_ = r.ensureBiomelabDir(wt.Path)
+	}
 }
 
 // RepoRoot finds the root of the git repository containing the given path.

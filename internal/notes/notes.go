@@ -99,6 +99,21 @@ func ReadTitle(worktreeDir string) (title string, ok bool, err error) {
 	return text, true, nil
 }
 
+// EnsureDir creates the .biomelab directory for the worktree if it doesn't
+// exist, and ensures it's added to the worktree's info/exclude. This allows
+// other tools to write files into the directory (e.g. pr-title.md, future
+// metadata files) without needing to create the directory themselves.
+func EnsureDir(worktreeDir string) error {
+	dir := filepath.Join(worktreeDir, noteDir)
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		return fmt.Errorf("create note dir: %w", err)
+	}
+	if err := ensureExcluded(worktreeDir); err != nil {
+		return fmt.Errorf("ensure excluded: %w", err)
+	}
+	return nil
+}
+
 // Exists reports whether a note file exists for the given worktree.
 func Exists(worktreeDir string) bool {
 	_, err := os.Stat(Path(worktreeDir))
