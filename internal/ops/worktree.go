@@ -9,6 +9,7 @@ import (
 	"github.com/mdelapenya/biomelab/internal/git"
 	"github.com/mdelapenya/biomelab/internal/github"
 	"github.com/mdelapenya/biomelab/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/regent"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
 	"github.com/mdelapenya/biomelab/internal/terminal"
 )
@@ -33,10 +34,35 @@ func (r CreateWorktreeResult) ErrorMessage() string {
 	return r.Err.Error()
 }
 
-// CreateWorktree creates a new linked worktree for the given branch.
+// CreateWorktree creates a new linked worktree for the given branch and
+// bootstraps the re_gent audit log on it (a no-op when rgt isn't installed).
+// Init failures don't surface to the caller — the worktree itself is the
+// product; rgt is a sidecar capability that the user can wire up later.
 func CreateWorktree(repo *git.Repository, branchName string) CreateWorktreeResult {
-	err := repo.CreateWorktree(branchName)
-	return CreateWorktreeResult{BranchName: branchName, Err: err}
+	if err := repo.CreateWorktree(branchName); err != nil {
+		return CreateWorktreeResult{BranchName: branchName, Err: err}
+	}
+	if path := worktreePathForBranch(repo, branchName); path != "" {
+		_ = regent.EnsureInit(path)
+	}
+	return CreateWorktreeResult{BranchName: branchName}
+}
+
+// worktreePathForBranch resolves the on-disk path of a freshly-created
+// worktree by re-listing and matching on branch name. Returns "" when no
+// match is found — the caller treats this as "skip the optional follow-up
+// step" rather than as an error.
+func worktreePathForBranch(repo *git.Repository, branchName string) string {
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		return ""
+	}
+	for _, wt := range wts {
+		if wt.Branch == branchName {
+			return wt.Path
+		}
+	}
+	return ""
 }
 
 // CreateSandboxWorktree creates a worktree inside an existing sandbox.

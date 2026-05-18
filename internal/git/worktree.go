@@ -18,8 +18,14 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	xworktree "github.com/go-git/go-git/v6/x/plumbing/worktree"
+)
 
-	"github.com/mdelapenya/biomelab/internal/notes"
+// biomelabDir is the per-worktree sidecar directory that biomelab uses
+// to store notes, PR drafts, and other transient state. Kept under the
+// worktree so it travels with the sandbox bind mount.
+const (
+	biomelabDir         = ".biomelab"
+	biomelabExcludeLine = "/.biomelab/"
 )
 
 // SyncStatus indicates whether a branch is up-to-date with its remote tracking branch.
@@ -991,10 +997,15 @@ func (r *Repository) HasStash() (bool, error) {
 }
 
 // ensureBiomelabDir ensures the .biomelab directory exists in the given
-// worktree path so external tools can write files without creating it themselves.
+// worktree path and that it's git-excluded. External tools (pr-scribe,
+// note editor) write files inside without needing to create the directory
+// themselves, and the entries never show up in `git status`.
 // Errors are silently ignored as this is a best-effort initialization.
 func (r *Repository) ensureBiomelabDir(wtPath string) error {
-	return notes.EnsureDir(wtPath)
+	if err := os.MkdirAll(filepath.Join(wtPath, biomelabDir), 0o755); err != nil {
+		return err
+	}
+	return EnsureExcluded(wtPath, biomelabExcludeLine)
 }
 
 // MigrateWorktreeDirs ensures .biomelab exists for all worktrees in the

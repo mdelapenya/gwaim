@@ -39,6 +39,7 @@ Go version: 1.25+ (check `go env GOROOT` if you hit version mismatches).
 - **go-git v6** (unreleased, from main branch) -- All git operations.
 - **gopsutil** -- Cross-platform process detection.
 - **gh CLI / glab CLI** -- External tools for PR/MR status.
+- **rgt CLI** ([re_gent](https://github.com/regent-vcs/re_gent)) -- Optional. When installed, biomelab auto-initializes `.regent/` per worktree and wires Claude Code hooks.
 
 ## Package layout
 
@@ -46,16 +47,21 @@ Go version: 1.25+ (check `go env GOROOT` if you hit version mismatches).
 cmd/biomelab/          Entry point, icon embedding, PATH expansion
 internal/
   gui/                 Fyne GUI: app, dashboard, cards, repo panel, dialogs,
-                       keyboard handling, theme, refresh manager, system tray
+                       keyboard handling, theme, refresh manager, system tray,
+                       sysdeps dialog + banner, regent log window, OS-native
+                       save dialog helper
   ops/                 Shared business operations (refresh, worktree CRUD,
                        sandbox ops) — extracted from old TUI for reuse
   config/              Repo list persistence (~/.config/biomelab/repos.json)
-  git/                 Go-git v6 wrapper
+  git/                 Go-git v6 wrapper + EnsureExcluded helper
   agent/               Agent process detection
   ide/                 IDE process detection
   process/             Shared process enumeration
   provider/            PR/MR provider abstraction (GitHub, GitLab)
   sandbox/             Docker Sandbox (sbx) CLI wrapper
+  notes/               Per-worktree Markdown notes (.biomelab/note.md)
+  regent/              re_gent (rgt) integration: detect, init, hooks, log
+  sysdeps/             External CLI dependency checks (gh/glab/sbx/rgt)
   terminal/            Open new terminal window
   github/              GitHub-specific PR helpers
 ```
@@ -88,6 +94,17 @@ Always run `go test -race ./...`.
   prefix truncation (`truncatePath`), PR text uses suffix truncation.
 - **Card grid navigation** — up/down jump by column count, left/right by 1.
   Column count computed from `dashSlot.Size().Width / cardCellSize().Width`.
+- **`rgt init` ignores positional path args** — it always operates on `cwd`.
+  Use `cmd.Dir = wtPath`, not `rgt init <wtPath>`.
+- **rgt hook installer needs a TTY** — `--agent claude` doesn't skip the
+  prompt in a non-TTY environment. Biomelab writes `.claude/settings.json`
+  itself via `regent.EnsureClaudeHooks` (ported from rgt upstream, Apache-2.0).
+- **`widget.Accordion` misbehaves inside `VScroll`** — clicks don't toggle.
+  Use a `widget.Button` that flips the inner container's visibility instead;
+  see the regent log dialog's tools collapsible for the pattern.
+- **One regent log window at a time** — keyed by `App.regentLogWindow` plus
+  a `regentLogReload` closure. Different cards reuse the same window via
+  reload; don't spawn a new one per worktree.
 
 ## Release process
 

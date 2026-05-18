@@ -14,20 +14,23 @@ cmd/biomelab/
 
 internal/
   gui/
-    app.go             FyneApp: window, HSplit layout, multi-repo management, mode switching
-    dashboard.go       Right panel: main card + scrollable linked cards grid, refresh timestamps
-    card.go            Worktree card rendering: branch, path, PR, agents, IDEs, status
-    repo_panel.go      Left panel: tappable VBox of repo/mode items (NOT widget.Tree)
-    repo_panel_drag.go Drag-handle widget + reorder math for repo panel
-    shortcuts.go       All keyboard handling: handleKeyName + handleRune, navigation, operations
-    keycapture.go      desktop.Canvas.SetOnKeyDown setup, zoom shortcuts
-    dialogs.go         Confirmation dialogs (delete, sandbox create/remove, send PR flow)
-    input_dialogs.go   Input dialogs (branch, PR ref, repo path, agent select)
-    refresh.go         RefreshManager: goroutine tickers for local (5s) and network refresh
-    state.go           RepoState: domain + UI state, worktree sorting
-    theme.go           Dark theme with zoom support (Ctrl+/Ctrl-)
-    icon.go            AppIcon resource (set from embedded icon at startup)
-    systray.go         System tray: Show/Hide toggle, Quit
+    app.go                  FyneApp: window, HSplit layout, multi-repo management, mode switching
+    dashboard.go            Right panel: main card + scrollable linked cards grid, refresh timestamps
+    card.go                 Worktree card rendering: branch, path, PR, agents, IDEs, status
+    repo_panel.go           Left panel: tappable VBox of repo/mode items (NOT widget.Tree)
+    repo_panel_drag.go      Drag-handle widget + reorder math for repo panel
+    shortcuts.go            All keyboard handling: handleKeyName + handleRune, navigation, operations
+    keycapture.go           desktop.Canvas.SetOnKeyDown setup, zoom shortcuts
+    dialogs.go              Confirmation dialogs (delete, sandbox create/remove, send PR flow)
+    input_dialogs.go        Input dialogs (branch, PR ref, repo path, agent select)
+    refresh.go              RefreshManager: goroutine tickers for local (5s) and network refresh
+    state.go                RepoState: domain + UI state, worktree sorting
+    theme.go                Dark theme with zoom support (Ctrl+/Ctrl-)
+    icon.go                 AppIcon resource (set from embedded icon at startup)
+    systray.go              System tray: Show/Hide toggle, Quit, Dependencies summary
+    sysdeps_dialog.go       System Dependencies modal + first-run banner
+    regent_log_dialog.go    Regent activity window (single instance, resizable, JSON export)
+    save_file.go            OS-native save dialog (osascript/zenity/PowerShell) + Fyne fallback
 
   ops/
     refresh.go         QuickRefresh, LocalRefresh, NetworkRefresh, CardRefresh
@@ -36,6 +39,7 @@ internal/
 
   config/config.go     Repo list persistence (~/.config/biomelab/repos.json)
   git/worktree.go      Go-git v6 wrapper: list, create, remove, pull, fetch, sync status
+  git/exclude.go       Per-worktree git info/exclude writer (used by notes + regent)
   git/credential.go    Git credential helper protocol (git credential fill)
   agent/               Agent kind registry + process detection
   ide/                 IDE kind registry + process detection
@@ -44,6 +48,9 @@ internal/
   sandbox/sandbox.go   Docker Sandbox (sbx) CLI wrapper
   terminal/terminal.go Open new terminal window (macOS .command / Linux x-terminal-emulator)
   github/pr.go         GitHub-specific PR helpers (ParsePRRef, ValidatePR)
+  notes/notes.go       Per-worktree Markdown notes (.biomelab/note.md, pr-title.md)
+  regent/              re_gent (rgt) integration: detection, init, hook install, log fetch
+  sysdeps/             External CLI dependency checks (gh/glab/sbx/rgt) + cache
 ```
 
 ## Key dependencies
@@ -176,6 +183,80 @@ skill (and similar tools) target: write the generated title and description
 to those two paths, and biomelab turns them into the actual PR on the next
 `Shift+P`.
 
+## re_gent integration
+
+[re_gent](https://github.com/regent-vcs/re_gent) captures every agent turn
+(prompt, reply, tool calls) into a content-addressed `.regent/` directory
+per worktree. Biomelab wraps it so the integration is invisible until the
+user installs `rgt`:
+
+- **Auto-init on host worktrees.** `ops.CreateWorktree` runs
+  `regent.EnsureInit` after every new worktree creation, and
+  `app.buildRepoEntry` walks existing worktrees on startup
+  (`migrateRegentForRepo`) so an `rgt install` retroactively wires up
+  every regular-mode worktree on the next refresh. Sandbox worktrees
+  skip this path — rgt belongs inside the container, installed via the
+  regent kit.
+- **`EnsureInit` runs `rgt init --skip-hook --skip-skills`** with
+  `cmd.Dir = wtPath`. `rgt init` ignores positional path args and always
+  operates on `cwd`, so `cmd.Dir` is mandatory. The `--skip-hook` flag is
+  used because rgt's interactive installer needs a TTY biomelab can't
+  provide; we install Claude hooks ourselves.
+- **`EnsureClaudeHooks` writes `.claude/settings.json`** with three event
+  hooks (`UserPromptSubmit`, `Stop`, `PostToolBatch`) pointing at
+  `rgt message-hook` / `rgt tool-batch-hook`. Idempotent: rgt-related
+  entries are deduplicated on each call, non-rgt entries are preserved.
+  The JSON shape is ported from rgt's own installer
+  (`internal/cli/init.go`, Apache-2.0, attributed in source).
+- **Git exclude.** `git.EnsureExcluded` writes `/.regent/` (and
+  `/.biomelab/`) to the worktree's common `info/exclude` so neither
+  directory shows up in `git status`. Extracted to `internal/git` so
+  both `notes` and `regent` share one helper (used to live in `notes`,
+  caused a `git → notes` import that prevented `notes → git`).
+- **Log viewer.** `l` shortcut opens `regent_log_dialog.go`, a single
+  top-level resizable window. Content comes from `rgt log --json`
+  (parsed in `internal/regent/log_json.go`) and renders structured rows:
+  `sha · timestamp · origin`, `Human:` prompt, `Agent:` reply, then a
+  `▶ N tools` toggle that reveals one row per tool call with the
+  primary arg inline (file_path / command / query) and the rest below.
+  Full file paths, no truncation. Single window: pressing `l` on a
+  different card reuses the open window (`App.regentLogWindow` +
+  `regentLogReload`).
+- **JSON export.** The window's `Export JSON…` button calls
+  `regent.LogJSONRaw` and saves the bytes via the OS-native save dialog
+  helper (`gui/save_file.go`: osascript on macOS, zenity/kdialog on
+  Linux, PowerShell on Windows; falls back to `dialog.NewFileSave`).
+
+## System dependencies
+
+`internal/sysdeps` is the registry of external CLIs biomelab cares
+about. Each `Check` has a `Probe` that returns `Result{Status, Version,
+Note}`; a `Cache` (default TTL 30s) memoizes results across the systray
+menu, the dialog, and the first-run banner.
+
+Two filtering layers apply before rendering:
+
+- `ApplySuppression` drops `Missing` entries whose `SuppressIfAny` list
+  names another check that is currently `OK` or `Degraded`. Used so
+  `glab missing` doesn't appear when `gh` is installed.
+- `ApplyVisibility` drops `Missing` entries whose `Applies(cfg)` callback
+  says the tool isn't relevant. Used so `sbx` doesn't appear at all
+  when the user has no sandbox-mode repo. **Important:** `Applies`
+  gates visibility of missing entries only — installed tools always
+  show as green even when the user's config doesn't strictly need them.
+  That way `sbx v0.29.0` is reported correctly on machines where the
+  user just happens to have it.
+- `Partition` splits the surviving entries into a primary list and an
+  optional list (`Optional && Missing`). The dialog renders the
+  primary list at the top and the optional list (currently just `rgt`)
+  under an "Optional tools" heading.
+
+The systray label is `Dependencies: N/M ✓` (or
+`Dependencies: N/M (X need attention)`), where N/M counts only the
+visible primary entries. Clicking opens the dialog; the dialog's
+**Re-check** button invalidates the cache and refreshes the systray
+label in one call.
+
 ## Pitfalls
 
 - go-git v6 is a pseudo-version. Do NOT use a `replace` directive.
@@ -185,3 +266,7 @@ to those two paths, and biomelab turns them into the actual PR on the next
 - `widget.Button` implements Focusable — don't put buttons in the main content.
 - IDE `ProcessPatterns` order matters: specific before broad (`"nvim"` before `"vim"`).
 - Always bounds-check `a.active < len(a.repos)` before accessing repos.
+- `rgt init` ignores positional path args and operates on `cwd`. Use `cmd.Dir`, not `rgt init <path>`.
+- `rgt init` hook installer needs a TTY; biomelab writes `.claude/settings.json` itself via `regent.EnsureClaudeHooks`. Don't rely on `--agent claude` to skip the prompt — it doesn't.
+- `widget.Accordion` misbehaves inside `container.NewVScroll` (clicks don't toggle). Use a button + visibility toggle instead — see the regent log dialog's tools collapsible.
+- The shared regent log window is keyed by `App.regentLogWindow` (single instance). Don't spawn a new window per worktree; reuse via `regentLogReload`.

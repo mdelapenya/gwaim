@@ -22,6 +22,8 @@
 - **Open in terminal** -- Press `Enter` to open a worktree in a terminal. If a terminal is already detected for that worktree, it is brought to the foreground instead of opening a new one. On macOS, activation uses TTY matching via AppleScript (requires Automation permission on first use).
 - **Open in editor** -- Press `e` to open in `$BIOME_EDITOR` (defaults to VS Code).
 - **Task notes** -- Press `m` (or right-click a card) to open a Markdown editor with a live preview, scoped to that worktree. Notes are stored at `<worktree>/.biomelab/note.md` (description) and `<worktree>/.biomelab/pr-title.md` (single-line title), auto-excluded from git, and mounted into the sandbox alongside the source so agents can read them. When you `Shift+P` to send a PR, biomelab offers to use the prepared title and description in place of the commit-derived defaults. External tools that write to those two paths become contributors to the next PR.
+- **Agent audit trail** ([re_gent](https://github.com/regent-vcs/re_gent)) -- When `rgt` is installed, biomelab auto-initializes `.regent/` in every regular-mode worktree and writes Claude Code hooks into `.claude/settings.json` — no terminal step. Press `l` (or systray → Dependencies) to open the activity window: one resizable view per session with `Human` / `Agent` rows, collapsible tool lists (full file paths, no truncation), and an **Export JSON…** button that writes the raw `rgt log --json` via the OS-native save dialog.
+- **System dependencies dialog** -- Systray entry (`Dependencies: N/M ✓`) opens a modal listing every external CLI biomelab relies on (`gh`, `glab`, `sbx`, `rgt`) with status dot, version, install hint, and docs link. A first-run banner above the dashboard nags only when a primary tool is missing or degraded; redundant CLIs (e.g. `glab` when `gh` is fine) are suppressed.
 - **Zoom** -- `Ctrl+=` / `Ctrl+-` / `Ctrl+0` to scale the UI font.
 - **System tray** -- Closing the window hides to system tray. Tray menu toggles Show/Hide.
 - **Auto-refresh** -- Local state refreshes every 5s, network state every 30s (configurable).
@@ -126,6 +128,7 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 | `Enter` | Activate existing terminal or open new | Any card |
 | `e` | Open in editor | Any card |
 | `m` | Open note editor (right-click also works) | Any card |
+| `l` | Open regent activity log | Any card |
 | `c` | Create worktree | Main card |
 | `f` | Fetch PR/MR | Main card |
 | `d` | Delete worktree / remove sandbox | Linked: delete; Main+sandbox: remove |
@@ -136,6 +139,9 @@ Launch `biomelab` from any directory, or open `Biomelab.app` from Spotlight/Find
 | `s` | Start stopped sandbox | Main card |
 | `Shift+S` | Stop running sandbox | Main card |
 | `k` | Pick kits → create (if missing) or recreate sandbox with `--kit` flags | Sandbox mode |
+| `g` | Toggle kanban / grid view | Global |
+| `Tab` | Toggle focus between panels | Global |
+| `Ctrl+T` | Toggle dark / light theme | Global |
 | `Ctrl+=` | Zoom in | Global |
 | `Ctrl+-` | Zoom out | Global |
 | `Ctrl+0` | Reset zoom | Global |

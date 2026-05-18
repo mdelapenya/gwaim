@@ -2,6 +2,7 @@ package gui
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 
 	"github.com/mdelapenya/biomelab/internal/config"
+	"github.com/mdelapenya/biomelab/internal/sysdeps"
 )
 
 // setupSystemTray creates a system tray icon with Show/Hide toggle, Theme
@@ -58,12 +60,17 @@ func (a *App) setupSystemTray() {
 		}
 	})
 
+	a.trayDepsItem = fyne.NewMenuItem(a.sysdepsSummaryLabel(), func() {
+		a.showSysDepsDialog()
+	})
+
 	a.trayMenu = fyne.NewMenu("biomelab",
 		toggleItem,
 		fyne.NewMenuItemSeparator(),
 		themeItem,
 		configItem,
 		sbxDocsItem,
+		a.trayDepsItem,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() {
 			a.stopAllRefresh()
@@ -105,6 +112,44 @@ func openInSystem(path string) error {
 		cmd = exec.Command("xdg-open", path)
 	}
 	return cmd.Start()
+}
+
+// sysdepsSummaryLabel returns the systray label like "Dependencies: 3/4 ✓"
+// or "Dependencies: 1 missing" when something is wrong. Builds from a fresh
+// cache read so the count reflects the latest probe (the cache itself
+// memoizes for sysdepsCacheTTL, so this is cheap to call on menu refresh).
+func (a *App) sysdepsSummaryLabel() string {
+	cfg := a.loadConfigForSysDeps()
+	reps := sysdeps.ApplyVisibility(
+		sysdeps.ApplySuppression(a.sysdepsCache.Get(cfg)),
+		cfg,
+	)
+	primary, _ := sysdeps.Partition(reps)
+	c := sysdeps.Summarize(primary)
+	total := c.Total()
+	if total == 0 {
+		return "Dependencies"
+	}
+	if c.Missing == 0 && c.Degraded == 0 {
+		return fmt.Sprintf("Dependencies: %d/%d ✓", c.OK, total)
+	}
+	missing := c.Missing + c.Degraded
+	return fmt.Sprintf("Dependencies: %d/%d (%d need attention)", c.OK, total, missing)
+}
+
+// refreshSysdepsTray re-probes the dependency cache and updates the systray
+// label and menu. Call after actions that could change the dep state
+// (e.g. dialog Re-check, future install actions).
+func (a *App) refreshSysdepsTray() {
+	if a.trayDepsItem == nil {
+		return
+	}
+	a.sysdepsCache.Invalidate()
+	a.trayDepsItem.Label = a.sysdepsSummaryLabel()
+	desk, ok := a.fyneApp.(desktop.App)
+	if ok && a.trayMenu != nil {
+		desk.SetSystemTrayMenu(a.trayMenu)
+	}
 }
 
 func (a *App) stopAllRefresh() {
