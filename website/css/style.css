@@ -1954,6 +1954,17 @@ footer {
   color: var(--cyan)
 }
 
+/* Footer hint inline parts: mode toggle on the left, CTA on the right,
+   separated by a muted dot. CTA is tinted to draw the eye toward the
+   click-to-explore action without overpowering the mode hint. */
+.kb-footer-sep {
+  color: var(--border-strong);
+  margin: 0 .5rem
+}
+.kb-footer-cta {
+  color: var(--cyan)
+}
+
 /* Mobile: stack columns vertically (2 per row) */
 @media (max-width: 1080px) {
   .kb-board {
@@ -2163,3 +2174,207 @@ footer {
   padding: .05rem .4rem;
   color: var(--cyan)
 }
+/* ──────────────────────────────────────────────────────────────────────
+ * Regent activity modal — mirrors biomelab's GUI viewer (WhatsApp-style
+ * chat: human bubbles on the right, agent on the left, an optional
+ * full-width "tools" bubble below the agent containing per-tool mini-
+ * bubbles). All colors come from the theme palette so the dark/light
+ * toggle works without modal-specific code.
+ * ────────────────────────────────────────────────────────────────────── */
+
+.rgt-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .18s ease
+}
+.rgt-modal[hidden] { display: none }
+.rgt-modal.open { opacity: 1 }
+
+.rgt-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .55)
+}
+[data-theme="light"] .rgt-modal-overlay { background: rgba(22, 43, 62, .42) }
+
+.rgt-modal-window {
+  position: relative;
+  width: min(960px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+  overflow: hidden
+}
+
+.rgt-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .85rem 1.2rem;
+  border-bottom: 1px solid var(--border)
+}
+.rgt-modal-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono)
+}
+.rgt-modal-close {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 .4rem
+}
+.rgt-modal-close:hover { color: var(--text-primary) }
+
+.rgt-modal-body {
+  overflow-y: auto;
+  padding: 1rem 1.2rem;
+  flex: 1
+}
+
+.rgt-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .7rem 1.2rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary)
+}
+.rgt-modal-hint {
+  font-size: .82rem;
+  color: var(--text-muted)
+}
+.rgt-modal-hint kbd {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: .05rem .4rem;
+  font-family: var(--font-mono);
+  font-size: .78rem;
+  color: var(--text-secondary)
+}
+.rgt-modal-export {
+  background: var(--cyan);
+  color: #fff;
+  border: 0;
+  border-radius: 7px;
+  padding: .5rem 1rem;
+  font-weight: 600;
+  font-size: .9rem;
+  cursor: pointer;
+  transition: filter .15s ease
+}
+.rgt-modal-export:hover { filter: brightness(1.12) }
+
+/* Step structure */
+.rgt-step + .rgt-step { margin-top: 1.4rem }
+.rgt-meta {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: .8rem;
+  font-family: var(--font-mono);
+  margin-bottom: .6rem
+}
+
+.rgt-row { display: flex; margin-bottom: .55rem }
+.rgt-row-right { justify-content: flex-end }
+.rgt-row-left  { justify-content: flex-start }
+
+.rgt-bubble {
+  max-width: 72%;
+  padding: .7rem .95rem;
+  border-radius: 12px;
+  border: 1px solid;
+  line-height: 1.5;
+  word-wrap: break-word;
+  color: var(--text-primary)
+}
+
+/* Bubble colors mirror the GUI: blue tint for human, purple for agent.
+   The same hues at higher alpha drive the border so each bubble has a
+   colored identity instead of the generic panel border. */
+.rgt-bubble-human {
+  background: rgba(88, 166, 255, .18);
+  border-color: rgba(88, 166, 255, .55)
+}
+.rgt-bubble-agent {
+  background: rgba(135, 95, 215, .18);
+  border-color: rgba(135, 95, 215, .55)
+}
+[data-theme="light"] .rgt-bubble-human {
+  background: rgba(32, 111, 232, .12);
+  border-color: rgba(32, 111, 232, .38)
+}
+[data-theme="light"] .rgt-bubble-agent {
+  background: rgba(154, 67, 203, .12);
+  border-color: rgba(154, 67, 203, .38)
+}
+
+/* Tools bubble: full row width, neutral surface so attention stays on
+   the per-tool mini-bubbles inside. */
+.rgt-bubble-tools {
+  max-width: 100%;
+  margin-bottom: .55rem;
+  background: var(--bg-secondary);
+  border-color: var(--border);
+  padding: .8rem 1rem
+}
+
+.rgt-tools-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: .88rem;
+  padding: .35rem 0 0;
+  cursor: pointer;
+  text-align: left
+}
+.rgt-tools-toggle:hover { color: var(--text-primary) }
+.rgt-tools-toggle span { display: inline-block; width: 1em }
+
+/* Each tool inside tools bubble: title outside + nested mini-bubble. */
+.rgt-tool { margin-bottom: .7rem }
+.rgt-tool:last-child { margin-bottom: 0 }
+.rgt-tool-name {
+  font-family: var(--font-mono);
+  font-size: .9rem;
+  color: var(--magenta);
+  font-weight: 700;
+  margin-bottom: .3rem
+}
+.rgt-tool-bubble {
+  padding: .55rem .75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px
+}
+.rgt-tool-arg {
+  font-family: var(--font-mono);
+  font-size: .82rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-wrap: break-word
+}
+.rgt-tool-arg + .rgt-tool-arg { margin-top: .25rem }
+
+/* Inline message text (preserves newlines via <br> from JS). */
+.rgt-msg + .rgt-tools-toggle { margin-top: .4rem }
+
+/* Body scroll lock while modal is open + click affordance on cards. */
+body.rgt-modal-open { overflow: hidden }
+.kb-card[data-kb] { cursor: pointer }

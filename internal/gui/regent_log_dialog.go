@@ -5,11 +5,14 @@ import (
 	"image/color"
 	"os/exec"
 	"sort"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mdelapenya/biomelab/internal/git"
@@ -51,6 +54,12 @@ func (a *App) showRegentLogModal(wt git.Worktree) {
 		w.SetTitle("Regent activity — " + target.Branch)
 		body.Objects = a.buildRegentLogContent(target)
 		body.Refresh()
+		// Force the VScroll to recompute its content min-size. Without
+		// this, Fyne sometimes paints the new VBox at the previous
+		// layout dimensions until the user resizes the window — looks
+		// like a corrupt redraw with overlapping text.
+		scroll.Refresh()
+		scroll.ScrollToTop()
 	}
 	render(wt)
 
@@ -122,102 +131,299 @@ func (a *App) buildRegentLogContent(wt git.Worktree) []fyne.CanvasObject {
 	return items
 }
 
-// buildRegentStepRow renders one Step as a stacked block: header line
-// (sha · timestamp · origin), Human prompt, Agent reply, and a
-// "[▶ N tools]" toggle button that reveals the tool list when clicked.
-// The toggle is a button (not widget.Accordion, which misbehaves inside
-// VScroll) — same proven pattern other surfaces in biomelab use.
+// buildRegentStepRow renders one Step as a WhatsApp-style chat exchange:
+//
+//   - centered metadata line (sha · timestamp · origin)
+//   - Human prompt right-aligned in a colored bubble (~72% width)
+//   - Agent reply left-aligned in a different colored bubble (~72%),
+//     containing the text + a "▶ N tools" toggle when there are tools
+//   - when the toggle is pressed, a separate full-width "tools" bubble
+//     appears below — tool calls hold long file paths / commands and
+//     would be cramped inside the agent bubble's 72% column.
+//
+// Empty roles produce no bubble.
 func buildRegentStepRow(s Step) fyne.CanvasObject {
 	rows := []fyne.CanvasObject{}
 
-	// Header: short sha · timestamp · origin.
-	headerText := fmt.Sprintf("● %s · %s", s.ShortHash(), s.Timestamp.Format("2006-01-02 15:04:05"))
+	// Centered metadata line — small and dim so it reads as a divider
+	// between turns, not as content.
+	metaText := fmt.Sprintf("● %s · %s", s.ShortHash(), s.Timestamp.Format("2006-01-02 15:04:05"))
 	if s.Origin != "" {
-		headerText += " · " + s.Origin
+		metaText += " · " + s.Origin
 	}
-	header := monoText(headerText, colorBranch, true)
-	header.TextSize = scaledSize(11)
-	rows = append(rows, header)
+	meta := monoText(metaText, colorDimGray, false)
+	meta.TextSize = scaledSize(10)
+	meta.Alignment = fyne.TextAlignCenter
+	rows = append(rows, container.NewCenter(meta))
 
 	if s.HumanPrompt != "" {
-		rows = append(rows, roleLine("Human", s.HumanPrompt, colorBlue))
+		bubble := buildSimpleBubble(s.HumanPrompt, colorBubbleHuman(), colorBubbleHumanStroke())
+		rows = append(rows, alignRight(bubble, naturalBubbleWidth(s.HumanPrompt)))
 	}
-	if s.AgentReply != "" {
-		rows = append(rows, roleLine("Agent", s.AgentReply, colorGreen))
-	}
-
-	if len(s.Tools) > 0 {
-		rows = append(rows, buildToolsCollapsible(s.Tools))
+	if s.AgentReply != "" || len(s.Tools) > 0 {
+		agent, toolsBubble := buildAgentBubble(s.AgentReply, s.Tools)
+		// Agent bubble has the reply text plus, when present, a tools
+		// toggle button. The toggle is wider than a very short reply
+		// like "Done." — floor at 200px so the button isn't crushed.
+		w := naturalBubbleWidth(s.AgentReply)
+		if len(s.Tools) > 0 && w < 200 {
+			w = 200
+		}
+		rows = append(rows, alignLeft(agent, w))
+		if toolsBubble != nil {
+			rows = append(rows, toolsBubble)
+		}
 	}
 
 	return container.NewVBox(rows...)
 }
 
-// roleLine renders a "Role: message" pair with the role bolded in its
-// signature color and the message body underneath in word-wrapped Label
-// form (so long prompts stay readable inside the window's width).
-func roleLine(role, body string, c color.Color) fyne.CanvasObject {
-	roleText := monoText(role+":", c, true)
-	roleText.TextSize = scaledSize(11)
+// bubble colors are looked up at render time (not at package init) so
+// they pick up theme changes — the palette globals (colorBlue,
+// colorPurple, colorPanelBg) are swapped wholesale by applyDarkPalette
+// and applyLightPalette, so a literal capturing the previous values
+// would render stale.
+//
+// Fill alpha (~45%) sits above the page background enough to read as a
+// bubble; the same tint at higher alpha (~55%) does the stroke so each
+// bubble has a colored border, not the generic panel border — that
+// gives Human and Agent visually distinct identities without saturating
+// the canvas.
+//
+// Tools is technical content, not a third speaker, so it uses
+// colorPanelBg (the existing "panel surface" color). Neutral surface
+// keeps emphasis on the conversation bubbles and avoids the saturated
+// look a third hue produced under both light and dark themes.
+const (
+	bubbleFillAlpha   = 115
+	bubbleStrokeAlpha = 200
+)
 
-	msg := widget.NewLabel(body)
-	msg.Wrapping = fyne.TextWrapWord
-	return container.NewVBox(roleText, msg)
+func colorBubbleHuman() color.Color { return tintAlpha(colorBlue, bubbleFillAlpha) }
+func colorBubbleAgent() color.Color { return tintAlpha(colorPurple, bubbleFillAlpha) }
+func colorBubbleTools() color.Color { return colorPanelBg }
+
+// colorBubbleToolInner is the fill for the per-tool mini-bubble that
+// nests inside the tools bubble. Using colorBackground gives a tone
+// distinct from the outer surface in both themes (lighter than panel
+// in dark mode, slightly tinted in light), creating a subtle nested
+// look.
+func colorBubbleToolInner() color.Color { return colorBackground }
+
+func colorBubbleHumanStroke() color.Color    { return tintAlpha(colorBlue, bubbleStrokeAlpha) }
+func colorBubbleAgentStroke() color.Color    { return tintAlpha(colorPurple, bubbleStrokeAlpha) }
+func colorBubbleToolsStroke() color.Color    { return colorBorder }
+func colorBubbleToolInnerStroke() color.Color { return colorBorder }
+
+// tintAlpha returns base with its alpha replaced by a (so the same RGB
+// can be reused at different opacities for fill vs stroke).
+func tintAlpha(base color.NRGBA, a uint8) color.NRGBA {
+	return color.NRGBA{R: base.R, G: base.G, B: base.B, A: a}
 }
 
-// buildToolsCollapsible renders a toggle button that expands/collapses
-// the tools list under it. The list shows one row per tool with the
-// tool name and its most important arg (file_path / command / query),
-// then a key=value dump of any remaining args — all with full paths,
-// no truncation.
-func buildToolsCollapsible(tools []ToolCall) fyne.CanvasObject {
-	count := len(tools)
-	plural := "tool"
-	if count != 1 {
-		plural = "tools"
-	}
+// alignRight returns o pinned to the right edge of its row, sized to
+// min(naturalWidth, chatBubbleMaxRatio * row width). Used for Human
+// bubbles.
+func alignRight(o fyne.CanvasObject, naturalWidth float32) fyne.CanvasObject {
+	return container.New(&chatRowLayout{alignRight: true, naturalWidth: naturalWidth}, o)
+}
 
-	list := container.NewVBox()
-	for _, t := range tools {
-		list.Add(buildToolRow(t))
-	}
-	list.Hide()
+// alignLeft returns o pinned to the left edge with the same width rule.
+// Used for Agent bubbles.
+func alignLeft(o fyne.CanvasObject, naturalWidth float32) fyne.CanvasObject {
+	return container.New(&chatRowLayout{alignRight: false, naturalWidth: naturalWidth}, o)
+}
 
-	var toggle *widget.Button
-	expanded := false
-	toggle = widget.NewButton(fmt.Sprintf("▶ %d %s", count, plural), func() {
-		expanded = !expanded
-		if expanded {
-			toggle.SetText(fmt.Sprintf("▼ %d %s", count, plural))
-			list.Show()
-		} else {
-			toggle.SetText(fmt.Sprintf("▶ %d %s", count, plural))
-			list.Hide()
+// chatBubbleMaxRatio is the upper bound on bubble width as a fraction
+// of row width. Short messages stay narrow; long ones cap here and
+// wrap inside the bubble.
+const chatBubbleMaxRatio = 0.72
+
+// chatRowLayout sizes the single child to min(naturalWidth, maxRatio*
+// row width) and pins it to one edge. naturalWidth comes from
+// pre-measuring the bubble's text — without that hint, a Label with
+// Wrapping=Word reports MinSize.Width equal to its longest word, which
+// would collapse the bubble to a vanishingly narrow strip.
+type chatRowLayout struct {
+	alignRight   bool
+	naturalWidth float32
+}
+
+// Layout resizes the bubble and positions it. Two Resize calls are
+// intentional: the first sets the width so the inner Label wraps and
+// updates its MinSize.Height; the second uses that fresh height to
+// finalize the bubble's vertical size. Without the second pass the
+// bubble would clip when wrap added more lines than MinSize predicted.
+func (l *chatRowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) == 0 {
+		return
+	}
+	child := objects[0]
+	maxW := size.Width * chatBubbleMaxRatio
+	w := l.naturalWidth
+	if w <= 0 || w > maxW {
+		w = maxW
+	}
+	if w < 80 {
+		w = 80 // floor so a one-word bubble still reads as a bubble
+	}
+	child.Resize(fyne.NewSize(w, child.MinSize().Height))
+	h := child.MinSize().Height
+	child.Resize(fyne.NewSize(w, h))
+	if l.alignRight {
+		child.Move(fyne.NewPos(size.Width-w, 0))
+	} else {
+		child.Move(fyne.NewPos(0, 0))
+	}
+}
+
+// MinSize reports zero width (so the parent VBox doesn't expand) and the
+// child's current wrapped height. First-render the height may be off by
+// one wrap pass; the explicit scroll.Refresh() after rendering kicks
+// Fyne to call Layout, which corrects subsequent reads.
+func (l *chatRowLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) == 0 {
+		return fyne.Size{}
+	}
+	return fyne.NewSize(0, objects[0].MinSize().Height)
+}
+
+// naturalBubbleWidth measures how wide a bubble needs to be to fit body
+// on a single (unwrapped) line per paragraph. fyne.MeasureText gives
+// us the rendered pixel width of the longest line; we pad to account
+// for the bubble's internal padding (NewPadded ≈ 8px each side) plus
+// the colored stroke. Returns 0 for empty input so the caller can fall
+// back to the layout's maxRatio cap.
+func naturalBubbleWidth(body string) float32 {
+	if body == "" {
+		return 0
+	}
+	size := theme.TextSize()
+	var maxW float32
+	for line := range strings.SplitSeq(body, "\n") {
+		w := fyne.MeasureText(line, size, fyne.TextStyle{}).Width
+		if w > maxW {
+			maxW = w
 		}
-	})
-	toggle.Alignment = widget.ButtonAlignLeading
+	}
+	// Internal padding + stroke + room for Label's own insets.
+	return maxW + 32
+}
 
-	return container.NewVBox(toggle, list)
+// buildSimpleBubble wraps a body text in a rounded surface with padding
+// — the bubble used for Human prompts. Label.Selectable + Wrapping lets
+// the user click-drag to highlight and Cmd/Ctrl+C to copy; the bubble's
+// width is governed by chatRowLayout.
+func buildSimpleBubble(body string, bg, stroke color.Color) fyne.CanvasObject {
+	msg := widget.NewLabel(body)
+	msg.Wrapping = fyne.TextWrapWord
+	msg.Selectable = true
+	return wrapBubble(msg, bg, stroke)
+}
+
+// buildAgentBubble builds the Agent reply bubble plus an optional
+// detached tools bubble. The reply bubble contains the assistant's
+// text and (when there are tools) a "▶ N tools" toggle button. The
+// tools bubble is full-width and hidden by default; clicking the
+// toggle shows/hides it. The two bubbles are separate so the tools'
+// long file paths and commands aren't cramped into the 72% chat column.
+//
+// Tools content is built lazily on first expansion: a step with 20
+// tool calls × 3 args each = 60 disabled Entry widgets, and
+// constructing all of them up front for every step makes the dialog
+// sluggish at scale. We keep an empty placeholder container in the
+// bubble and populate it the first time the user clicks the toggle.
+// Subsequent toggles are pure Show/Hide.
+//
+// Returns (replyBubble, toolsBubble). toolsBubble is nil (typed *fyne.
+// Container, not interface) when there are no tools — callers can
+// nil-check directly without the staticcheck SA4023 false-negative
+// that hits when an interface wraps a nil pointer.
+func buildAgentBubble(reply string, tools []ToolCall) (fyne.CanvasObject, *fyne.Container) {
+	var content []fyne.CanvasObject
+	if reply != "" {
+		msg := widget.NewLabel(reply)
+		msg.Wrapping = fyne.TextWrapWord
+		msg.Selectable = true
+		content = append(content, msg)
+	}
+
+	var toolsBubble *fyne.Container
+	if len(tools) > 0 {
+		// Empty placeholder list; rows are added on first expand. The
+		// tools bubble has no scroll — arg lines wrap into multiple
+		// lines when they're too long. Stacked horizontal scrollbars
+		// looked broken; vertical wrap is the cleaner trade.
+		listVBox := container.NewVBox()
+		toolsBubble = wrapBubble(listVBox, colorBubbleTools(), colorBubbleToolsStroke())
+		toolsBubble.Hide()
+
+		count := len(tools)
+		plural := "tool"
+		if count != 1 {
+			plural = "tools"
+		}
+		built := false
+		var toggle *widget.Button
+		expanded := false
+		toggle = widget.NewButton(fmt.Sprintf("▶ %d %s", count, plural), func() {
+			expanded = !expanded
+			if expanded {
+				if !built {
+					for _, t := range tools {
+						listVBox.Add(buildToolRow(t))
+					}
+					built = true
+					listVBox.Refresh()
+				}
+				toggle.SetText(fmt.Sprintf("▼ %d %s", count, plural))
+				toolsBubble.Show()
+			} else {
+				toggle.SetText(fmt.Sprintf("▶ %d %s", count, plural))
+				toolsBubble.Hide()
+			}
+		})
+		toggle.Alignment = widget.ButtonAlignLeading
+		content = append(content, toggle)
+	}
+
+	inner := container.NewVBox(content...)
+	return wrapBubble(inner, colorBubbleAgent(), colorBubbleAgentStroke()), toolsBubble
+}
+
+// wrapBubble layers a content object on top of a rounded-rectangle
+// background with a 1px tinted stroke and padding inside. Returned type
+// is *fyne.Container so callers can Show / Hide it.
+func wrapBubble(content fyne.CanvasObject, bg, stroke color.Color) *fyne.Container {
+	bgRect := canvas.NewRectangle(bg)
+	bgRect.CornerRadius = 10
+	bgRect.StrokeColor = stroke
+	bgRect.StrokeWidth = 1
+	return container.NewStack(bgRect, container.NewPadded(content))
 }
 
 // buildToolRow renders one tool invocation: name in bold, primary arg
 // inline next to it, secondary args one-per-line beneath.
+//
+// Arg values use widget.RichText with TextWrapWord so a 1KB `old_string`
+// no longer drags the window to be 1KB wide. Each value is also
+// soft-capped (see formatArgValue) so multi-page diffs collapse to a
+// preview + length hint — the full content is still recoverable via
+// `rgt show <hash>` outside biomelab.
 func buildToolRow(t ToolCall) fyne.CanvasObject {
 	primaryKey, primaryValue := pickPrimaryArg(t)
 
 	head := monoText("└─ "+t.Name, colorPurple, true)
 	head.TextSize = scaledSize(11)
-	rows := []fyne.CanvasObject{}
-	if primaryKey != "" {
-		line := monoText(fmt.Sprintf("   %s: %s", primaryKey, primaryValue), colorDimGray, false)
-		line.TextSize = scaledSize(10)
-		rows = append(rows, container.NewVBox(head, line))
-	} else {
-		rows = append(rows, head)
-	}
 
-	// Secondary args (anything other than the primary key) on extra
-	// lines, sorted for stable rendering.
+	// Args go into a nested mini-bubble so each tool reads as a self-
+	// contained record. The mini-bubble is on a slightly different
+	// surface color than the outer tools bubble (colorBackground vs
+	// colorPanelBg), producing a subtle "card inside card" depth.
+	var argRows []fyne.CanvasObject
+	if primaryKey != "" {
+		argRows = append(argRows, wrappedArgLine(primaryKey, primaryValue))
+	}
 	keys := make([]string, 0, len(t.Args))
 	for k := range t.Args {
 		if k == primaryKey {
@@ -227,11 +433,29 @@ func buildToolRow(t ToolCall) fyne.CanvasObject {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		line := monoText(fmt.Sprintf("   %s: %s", k, formatArgValue(t.Args[k])), colorDimGray, false)
-		line.TextSize = scaledSize(10)
-		rows = append(rows, line)
+		argRows = append(argRows, wrappedArgLine(k, formatArgValue(t.Args[k])))
 	}
-	return container.NewVBox(rows...)
+
+	if len(argRows) == 0 {
+		// Tool with no args: just the title, no empty bubble.
+		return head
+	}
+	argsBox := container.NewVBox(argRows...)
+	innerBubble := wrapBubble(argsBox, colorBubbleToolInner(), colorBubbleToolInnerStroke())
+	return container.NewVBox(head, innerBubble)
+}
+
+// wrappedArgLine renders a "   key: value" pair as a selectable Label
+// with word-wrap. The tools bubble has no enclosing scroll anymore
+// (stacked horizontal scrollbars looked broken), so long values wrap
+// into multiple lines inside the bubble. The previous Label-in-scroll
+// collapse bug doesn't apply here because there's no scroll wrapping
+// the label.
+func wrappedArgLine(key, value string) fyne.CanvasObject {
+	label := widget.NewLabel("   " + key + ": " + value)
+	label.Wrapping = fyne.TextWrapWord
+	label.Selectable = true
+	return label
 }
 
 // pickPrimaryArg chooses the most informative arg for a tool's primary
@@ -249,13 +473,12 @@ func pickPrimaryArg(t ToolCall) (string, string) {
 }
 
 // formatArgValue renders an arg value as a single line. Strings pass
-// through; everything else gets a short %v form. Newlines collapse to a
-// single space so the line stays a line.
+// through; everything else gets a short %v form. Newlines collapse to
+// a single space so a multi-line arg renders as one row — the row's
+// own horizontal scroll lets the user see the full content without
+// dragging the window.
 func formatArgValue(v any) string {
 	s := fmt.Sprintf("%v", v)
-	// Collapse newlines so multi-line args (commands, content blocks)
-	// stay on one line in the row view. Users wanting full content can
-	// click through to `rgt show <hash>` later.
 	out := make([]rune, 0, len(s))
 	for _, r := range s {
 		if r == '\n' || r == '\r' {
