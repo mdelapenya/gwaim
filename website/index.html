@@ -369,11 +369,11 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
     <div class="container">
       <span class="section-label">Kanban Board</span>
       <h2>See every PR's lifecycle <span class="kb-accent">at a glance</span></h2>
-      <p class="kanban-intro">The default view groups your worktrees into four columns — from fresh branch to merged PR. One keystroke switches to the flat grid and back.</p>
+      <p class="kanban-intro">The default view groups your worktrees into five columns — from closed PRs to merged. One keystroke switches to the flat grid and back.</p>
       <div class="kanban-features">
         <div class="kanban-feat-card"><span class="icon">📋</span>
-          <h3>Four lifecycle stages</h3>
-          <p>Created → PR Sent → PR In Review → PR Merged. Branches self-sort as CI runs and reviewers respond.</p>
+          <h3>Five lifecycle stages</h3>
+          <p>Closed Unmerged → Created → PR Sent → PR In Review → PR Merged. Branches self-sort as CI runs and reviewers respond.</p>
         </div>
         <div class="kanban-feat-card"><span class="icon">🔍</span>
           <h3>Review status on every card</h3>
@@ -390,7 +390,27 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
 
         <div class="kb-board">
 
-          <!-- Column 0: Created -->
+          <!-- Column 0: Closed Unmerged -->
+          <div class="kb-col kb-col-closed">
+            <div class="kb-col-header">
+              <span class="kb-col-title">Closed Unmerged</span>
+              <span class="kb-col-badge kb-badge-red">1</span>
+            </div>
+            <div class="kb-card kb-card-closed" data-kb="feat/old-feature">
+              <div class="kb-card-top">
+                <span class="kb-dot kb-dot-red"></span>
+                <span class="kb-branch">feat/old-feature</span>
+              </div>
+              <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+              <div class="kb-card-status">
+                <span class="kb-pr-label">PR <span class="kb-pr-num">#15</span> <span class="kb-pr-state-closed">closed</span></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kb-flow-arrow">&#x276F;</div>
+
+          <!-- Column 1: Created -->
           <div class="kb-col kb-col-created">
             <div class="kb-col-header">
               <span class="kb-col-title">Created</span>
