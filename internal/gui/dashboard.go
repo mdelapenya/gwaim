@@ -373,7 +373,7 @@ func (d *Dashboard) helpBar() fyne.CanvasObject {
 	if d.state.ViewMode == ViewKanban {
 		viewHint = "[g] grid"
 	}
-	help := monoText("↑↓ nav  [Tab] panel  [⏎] open  [e] editor  [m] note  [r] refresh  [d] delete  [p] pull  [P] PR  "+viewHint, colorDimGray, false)
+	help := monoText("↑↓ nav  [Tab] panel  [⏎] open  [e] editor  [m] note  [l] log  [r] refresh  [d] delete  [p] pull  [P] PR  "+viewHint, colorDimGray, false)
 	help.TextSize = scaledSize(9)
 
 	return container.NewStack(bg, container.NewPadded(help))

@@ -1,14 +1,12 @@
 package gui
 
 import (
-	"net/url"
 	"time"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
@@ -19,7 +17,9 @@ import (
 	"github.com/mdelapenya/biomelab/internal/ops"
 	"github.com/mdelapenya/biomelab/internal/process"
 	"github.com/mdelapenya/biomelab/internal/provider"
+	"github.com/mdelapenya/biomelab/internal/regent"
 	"github.com/mdelapenya/biomelab/internal/sandbox"
+	"github.com/mdelapenya/biomelab/internal/sysdeps"
 	"github.com/mdelapenya/biomelab/internal/terminal"
 )
 
@@ -59,11 +59,6 @@ type App struct {
 	procLister      process.Lister
 	refreshInterval time.Duration
 
-	// warnSbxMissing is set during buildContent when at least one configured
-	// repo uses sandbox mode but the sbx CLI is not on PATH. Run() shows a
-	// one-shot informational dialog after the window appears.
-	warnSbxMissing bool
-
 	focus        focusPanel
 	dialogOpen   bool
 	activeDialog interface{ Hide() } // current dialog, for Escape dismissal
@@ -71,10 +66,22 @@ type App struct {
 	// the worktree path so a repeated 'm' or Review click raises the
 	// existing window instead of spawning duplicates.
 	noteWindows map[string]fyne.Window
+	// regentLogWindow is the single shared regent log window. Pressing
+	// 'l' on any card reuses this window (updating title + content via
+	// regentLogReload), so the user always has at most one open.
+	regentLogWindow fyne.Window
+	regentLogReload func(wt git.Worktree)
 	trayMenu    *fyne.Menu
 	// System tray theme submenu items, held so we can update Checked state.
 	trayThemeLight *fyne.MenuItem
 	trayThemeDark  *fyne.MenuItem
+	// trayDepsItem is the "Dependencies: N/M ✓" line; held so we can
+	// rewrite its label after re-probing.
+	trayDepsItem *fyne.MenuItem
+	// sysdepsCache memoizes Probe results for the dependencies dialog and
+	// systray summary. TTL is short enough to feel live; the dialog also
+	// exposes an explicit Re-check button that forces a refresh.
+	sysdepsCache *sysdeps.Cache
 }
 
 // NewApp creates a new biomelab Fyne application.
@@ -94,8 +101,14 @@ func NewApp(
 		procLister:      procLister,
 		refreshInterval: refreshInterval,
 		sbxStatuses:     make(map[string]sandbox.Status),
+		sysdepsCache:    sysdeps.NewCache(sysdepsCacheTTL),
 	}
 }
+
+// sysdepsCacheTTL bounds how long the dependencies cache memoizes probe
+// results. Short enough that "user just installed rgt" feels live; long
+// enough that opening the systray menu twice in a row doesn't re-exec.
+const sysdepsCacheTTL = 30 * time.Second
 
 // Run initializes the GUI and starts the event loop. Blocks until the window is closed.
 func (a *App) Run() {
@@ -132,27 +145,7 @@ func (a *App) Run() {
 	// SetCloseIntercept is set inside setupSystemTray.
 	a.setupSystemTray()
 
-	if a.warnSbxMissing {
-		// fyne.Do queues onto the UI thread; the queued work fires once
-		// ShowAndRun starts the event loop, so the dialog appears over the
-		// freshly painted window.
-		go fyne.Do(a.showSbxMissingDialog)
-	}
-
 	a.window.ShowAndRun()
-}
-
-func (a *App) showSbxMissingDialog() {
-	installURL, _ := url.Parse(sbxInstallURL)
-	content := container.NewVBox(
-		widget.NewLabel("One or more configured repositories use sandbox mode,"),
-		widget.NewLabel("but the sbx CLI was not found in PATH."),
-		widget.NewLabel("Sandbox actions will fail until you install it."),
-		widget.NewHyperlink("Install sbx", installURL),
-	)
-	d := dialog.NewCustom("Sandbox CLI Missing", "OK", content, a.window)
-	d.Resize(dialogMinSize)
-	d.Show()
 }
 
 func (a *App) buildContent() fyne.CanvasObject {
@@ -161,24 +154,14 @@ func (a *App) buildContent() fyne.CanvasObject {
 		return a.emptyState()
 	}
 
-	// Check sandbox statuses once up front.
+	// Check sandbox statuses once up front. When sbx isn't installed, the
+	// deps banner + dialog surface that — buildContent doesn't need to
+	// emit a separate warning here.
 	a.sbxStatuses = make(map[string]sandbox.Status)
 	if sandbox.Available() {
 		statusMap := sandbox.CheckAllStatuses()
 		for k, v := range statusMap {
 			a.sbxStatuses[k] = v
-		}
-	} else {
-		for _, entry := range cfg.Repos {
-			for _, m := range entry.Modes {
-				if m.Type == "sandbox" {
-					a.warnSbxMissing = true
-					break
-				}
-			}
-			if a.warnSbxMissing {
-				break
-			}
 		}
 	}
 
@@ -266,6 +249,16 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 
 	// Migrate existing worktrees to ensure .biomelab dir exists (background task).
 	go repo.MigrateWorktreeDirs()
+
+	// Bootstrap re_gent on existing worktrees too, but only when at least
+	// one of the repo's configured modes is non-sandbox. Sandbox-only repos
+	// install rgt inside the container (via the regent kit), not on the
+	// host. EnsureInit is itself a no-op when rgt is missing, so this is
+	// safe to schedule unconditionally — the mode gate just keeps us from
+	// creating empty .regent/ dirs for sandbox-only repos.
+	if hasNonSandboxMode(entry.Modes) {
+		go migrateRegentForRepo(repo)
+	}
 
 	rm.OnRefresh = func(result ops.RefreshResult) {
 		fyne.Do(func() {
@@ -427,7 +420,16 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 	split := container.NewHSplit(a.repoPanel.Content(), a.dashSlot)
 	split.Offset = 0.18
 
-	return container.NewBorder(titleBar, nil, nil, nil, split)
+	// First-run banner: shown above the split when one or more primary
+	// dependencies are missing or degraded. Click → opens the dialog.
+	// buildDepsBanner returns nil when everything is OK, in which case
+	// we omit the row entirely.
+	top := fyne.CanvasObject(titleBar)
+	if banner := a.buildDepsBanner(); banner != nil {
+		top = container.NewVBox(titleBar, banner)
+	}
+
+	return container.NewBorder(top, nil, nil, nil, split)
 }
 
 func (a *App) switchMode(groupIdx, modeIdx int) {
@@ -482,6 +484,34 @@ func (a *App) loadInitialVariant() ThemeVariant {
 		return VariantLight
 	}
 	return VariantDark
+}
+
+// hasNonSandboxMode returns true when any mode in the list is not "sandbox".
+// Used to gate host-side regent bootstrap: a sandbox-only repo has rgt
+// installed inside the container (via the regent kit), so the host has no
+// business creating .regent/ for it.
+func hasNonSandboxMode(modes []config.ModeEntry) bool {
+	for _, m := range modes {
+		if m.Type != "sandbox" {
+			return true
+		}
+	}
+	return false
+}
+
+// migrateRegentForRepo lists the repo's worktrees and runs regent.EnsureInit
+// on each. Safe to call when rgt isn't installed (EnsureInit no-ops).
+// Runs as a background goroutine — no return value, errors are best-effort.
+func migrateRegentForRepo(repo *git.Repository) {
+	wts, err := repo.ListWorktrees()
+	if err != nil {
+		return
+	}
+	paths := make([]string, 0, len(wts))
+	for _, wt := range wts {
+		paths = append(paths, wt.Path)
+	}
+	regent.MigrateAll(paths)
 }
 
 // toggleTheme flips the theme variant. Used by the Ctrl+T shortcut.

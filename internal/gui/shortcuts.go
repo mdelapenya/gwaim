@@ -119,6 +119,8 @@ func (a *App) handleKeyName(key fyne.KeyName) {
 		a.handleInstallKits()
 	case fyne.KeyM:
 		a.handleEditNote()
+	case fyne.KeyL:
+		a.handleRegentLog()
 	}
 }
 
@@ -661,6 +663,22 @@ func (a *App) handlePull() {
 			a.refreshMgr.TriggerLocal()
 		})
 	}()
+}
+
+// handleRegentLog opens the regent log modal for the currently selected
+// worktree. A no-op when no card is selected — the modal would be empty
+// of context. Bound to the 'l' shortcut so users can reach the log without
+// hunting for the pill on the card.
+func (a *App) handleRegentLog() {
+	re := a.activeRepo()
+	if re == nil {
+		return
+	}
+	idx, ok := a.selectedWorktree()
+	if !ok {
+		return
+	}
+	a.showRegentLogModal(re.state.Worktrees[idx])
 }
 
 func (a *App) handleEditNote() {
