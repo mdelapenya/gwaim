@@ -370,3 +370,27 @@ func TestEnsureExcludedAppendsNewlineWhenMissing(t *testing.T) {
 		t.Errorf("exclude = %q, want %q", data, want)
 	}
 }
+
+func TestEnsureDir(t *testing.T) {
+	repo := initRepo(t)
+	if err := EnsureDir(repo); err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	noteDir := filepath.Join(repo, ".biomelab")
+	if _, err := os.Stat(noteDir); err != nil {
+		t.Errorf("note dir not created: %v", err)
+	}
+	// Verify the exclude entry is set.
+	excludePath := filepath.Join(repo, ".git", "info", "exclude")
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("read exclude: %v", err)
+	}
+	if !strings.Contains(string(data), excludeLine) {
+		t.Errorf("exclude file missing %q:\n%s", excludeLine, data)
+	}
+	// EnsureDir on existing dir should be idempotent.
+	if err := EnsureDir(repo); err != nil {
+		t.Fatalf("EnsureDir again: %v", err)
+	}
+}

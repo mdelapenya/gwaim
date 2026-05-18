@@ -264,6 +264,9 @@ func (a *App) buildRepoEntry(entry config.RepoEntry) *repoEntry {
 		refreshMgr: rm,
 	}
 
+	// Migrate existing worktrees to ensure .biomelab dir exists (background task).
+	go repo.MigrateWorktreeDirs()
+
 	rm.OnRefresh = func(result ops.RefreshResult) {
 		fyne.Do(func() {
 			// Reconcile the stored sandbox name FIRST so ApplyRefresh's
