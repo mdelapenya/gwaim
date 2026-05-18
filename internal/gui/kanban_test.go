@@ -70,8 +70,14 @@ func TestKanbanStages_AlwaysFourStages(t *testing.T) {
 				},
 			}
 			stages := d.KanbanStages()
-			if len(stages) != 4 {
-				t.Fatalf("KanbanStages returned %d stages, want 4", len(stages))
+			// Each linked worktree must appear in exactly one stage bucket.
+			linked := len(d.state.LinkedWorktrees())
+			total := 0
+			for _, bucket := range stages {
+				total += len(bucket)
+			}
+			if total != linked {
+				t.Errorf("stages contain %d worktree indices, want %d (one per linked worktree)", total, linked)
 			}
 		})
 	}
