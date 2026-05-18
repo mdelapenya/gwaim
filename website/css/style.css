@@ -675,8 +675,21 @@ nav .container {
   margin-top: 3rem
 }
 
+/*
+ * Center the cards instead of left-aligning them with a CSS grid. A flex
+ * row with wrap + justify-content: center lets partial rows (e.g. 6
+ * cards = 4 + 2) sit centered in the container, with each card capped at
+ * 280px so wide viewports don't stretch the cards into oversized blocks.
+ */
 .dashboard-features {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr))
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center
+}
+
+.dashboard-features .feature-card {
+  flex: 1 1 240px;
+  max-width: 280px
 }
 
 .sandbox-grid {
@@ -1089,9 +1102,14 @@ nav .container {
   }
 }
 
+/*
+ * Centered flex-wrap so a partial last row of workflow steps lands in
+ * the middle of the section instead of pinned to one side.
+ */
 .workflow-steps {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 1.25rem;
   margin-top: 3rem
 }
@@ -1100,7 +1118,9 @@ nav .container {
   display: flex;
   gap: 1rem;
   align-items: flex-start;
-  padding: 1.4rem
+  padding: 1.4rem;
+  flex: 1 1 300px;
+  max-width: 360px
 }
 
 .step-number {
@@ -1362,9 +1382,15 @@ nav .container {
   font-family: var(--font-mono)
 }
 
+/*
+ * Same pattern as .dashboard-features: flex-wrap + justify-content:
+ * center so partial rows (e.g. 14 keybindings = 5 + 5 + 4) sit centered
+ * instead of left-aligned with empty slots on the right.
+ */
 .keyboard-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 1rem;
   margin-top: 3rem
 }
@@ -1373,7 +1399,9 @@ nav .container {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: .85rem 1rem
+  padding: .85rem 1rem;
+  flex: 1 1 210px;
+  max-width: 260px
 }
 
 .key-cap {
