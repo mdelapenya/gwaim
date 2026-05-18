@@ -386,7 +386,7 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
       </div>
 
       <div class="kanban-diagram-html">
-        <h4 class="diagram-title">PR Lifecycle Board</h4>
+        <h4 class="diagram-title" id="kb-title">PR Lifecycle Board</h4>
 
         <div class="kb-board">
 
@@ -554,6 +554,124 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
           </div>
 
         </div><!-- /.kb-board -->
+
+        <!-- Grid view: flat responsive layout (toggled with 'g' key) -->
+        <div class="kb-grid">
+          <!-- Closed Unmerged -->
+          <div class="kb-card kb-card-closed" data-kb="feat/old-feature">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-red"></span>
+              <span class="kb-branch">feat/old-feature</span>
+              <span class="kb-stage-pill kb-stage-closed">closed</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#15</span> <span class="kb-pr-state-closed">closed</span></span></div>
+          </div>
+
+          <!-- Created -->
+          <div class="kb-card" data-kb="feat/new-signup">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-gray"></span>
+              <span class="kb-branch">feat/new-signup</span>
+              <span class="kb-stage-pill kb-stage-created">created</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-green">● claude</span></div>
+            <div class="kb-card-status"><span class="kb-no-pr">no PR</span></div>
+          </div>
+
+          <div class="kb-card" data-kb="fix/sidebar">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-gray"></span>
+              <span class="kb-branch">fix/sidebar</span>
+              <span class="kb-stage-pill kb-stage-created">created</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+            <div class="kb-card-status"><span class="kb-no-pr">no PR</span></div>
+          </div>
+
+          <!-- PR Sent -->
+          <div class="kb-card" data-kb="feat/auth-flow">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-blue"></span>
+              <span class="kb-branch">feat/auth-flow</span>
+              <span class="kb-stage-pill kb-stage-sent">sent</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-green">● claude</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#42</span> <span class="kb-pr-state-open">open</span></span><span class="kb-ci kb-ci-pending" title="CI pending">●</span></div>
+          </div>
+
+          <div class="kb-card" data-kb="fix/memory-leak">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-blue"></span>
+              <span class="kb-branch">fix/memory-leak</span>
+              <span class="kb-stage-pill kb-stage-sent">sent</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#38</span> <span class="kb-pr-state-open">open</span></span><span class="kb-ci kb-ci-pass" title="CI passed">✓</span></div>
+          </div>
+
+          <div class="kb-card kb-card-draft" data-kb="refactor/db">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-dim"></span>
+              <span class="kb-branch kb-branch-dim">refactor/db</span>
+              <span class="kb-stage-pill kb-stage-sent">sent</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-green">● codex</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#35</span> <span class="kb-pr-state-draft">draft</span></span></div>
+          </div>
+
+          <!-- PR In Review -->
+          <div class="kb-card kb-card-approved" data-kb="feat/api-v2">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-yellow"></span>
+              <span class="kb-branch">feat/api-v2</span>
+              <span class="kb-stage-pill kb-stage-review">review</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-green">● claude</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#31</span> <span class="kb-pr-state-open">open</span></span><span class="kb-review kb-review-approved" title="Approved">✓</span><span class="kb-ci kb-ci-pass" title="CI passed">✓</span></div>
+          </div>
+
+          <div class="kb-card kb-card-changes" data-kb="fix/login">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-yellow"></span>
+              <span class="kb-branch">fix/login</span>
+              <span class="kb-stage-pill kb-stage-review">review</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#29</span> <span class="kb-pr-state-open">open</span></span><span class="kb-review kb-review-changes" title="Changes requested">!</span><span class="kb-ci kb-ci-fail" title="CI failed">✗</span></div>
+          </div>
+
+          <!-- PR Merged -->
+          <div class="kb-card kb-card-merged" data-kb="feat/dark-mode">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-purple"></span>
+              <span class="kb-branch kb-branch-merged">feat/dark-mode</span>
+              <span class="kb-stage-pill kb-stage-merged">merged</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#28</span> <span class="kb-pr-state-merged">merged</span></span><span class="kb-ci kb-ci-pass">✓</span></div>
+          </div>
+
+          <div class="kb-card kb-card-merged" data-kb="fix/typo">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-purple"></span>
+              <span class="kb-branch kb-branch-merged">fix/typo</span>
+              <span class="kb-stage-pill kb-stage-merged">merged</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#27</span> <span class="kb-pr-state-merged">merged</span></span><span class="kb-ci kb-ci-pass">✓</span></div>
+          </div>
+
+          <div class="kb-card kb-card-merged" data-kb="feat/ui-refresh">
+            <div class="kb-card-top">
+              <span class="kb-dot kb-dot-purple"></span>
+              <span class="kb-branch kb-branch-merged">feat/ui-refresh</span>
+              <span class="kb-stage-pill kb-stage-merged">merged</span>
+            </div>
+            <div class="kb-card-meta"><span class="kb-agent kb-agent-dim">○ no agent</span></div>
+            <div class="kb-card-status"><span class="kb-pr-label">PR <span class="kb-pr-num">#24</span> <span class="kb-pr-state-merged">merged</span></span><span class="kb-ci kb-ci-pass">✓</span></div>
+          </div>
+        </div><!-- /.kb-grid -->
 
         <div class="kb-footer-hint">
           <span>↑↓ navigate column · ←→ switch column · <kbd>g</kbd> toggle grid view</span>
@@ -815,6 +933,52 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
+
+    // Kanban / grid toggle — press 'g' to switch views
+    (function () {
+      var diagram = document.querySelector('.kanban-diagram-html');
+      var title   = document.querySelector('#kb-title');
+      var hint    = document.querySelector('.kb-footer-hint span');
+      var STORE_KEY = 'kb-view';
+
+      function getHintHTML(mode) {
+        if (mode === 'grid') {
+          return 'Press <kbd class="kb-g-glow">g</kbd> to return to kanban board';
+        } else {
+          return 'Try <kbd class="kb-g-glow">g</kbd> for grid view';
+        }
+      }
+
+      function setView(mode) {
+        if (mode === 'grid') {
+          diagram.classList.add('kb-view-grid');
+          title.textContent = 'Card Grid View';
+          hint.innerHTML = getHintHTML('grid');
+        } else {
+          diagram.classList.remove('kb-view-grid');
+          title.textContent = 'PR Lifecycle Board';
+          hint.innerHTML = getHintHTML('kanban');
+        }
+        localStorage.setItem(STORE_KEY, mode);
+      }
+
+      // Restore saved preference
+      var saved = localStorage.getItem(STORE_KEY);
+      if (saved === 'grid') setView('grid');
+
+      document.addEventListener('keydown', function (e) {
+        // Ignore when focus is in an input / textarea
+        var tag = document.activeElement && document.activeElement.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (e.key === 'g' || e.key === 'G') {
+          setView(diagram.classList.contains('kb-view-grid') ? 'kanban' : 'grid');
+          // Trigger glow animation on title as feedback
+          title.classList.remove('kb-glow-pulse');
+          void title.offsetWidth; // Force reflow to restart animation
+          title.classList.add('kb-glow-pulse');
+        }
+      });
+    })();
   </script>
 </body>
 
