@@ -2378,3 +2378,341 @@ footer {
 /* Body scroll lock while modal is open + click affordance on cards. */
 body.rgt-modal-open { overflow: hidden }
 .kb-card[data-kb] { cursor: pointer }
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Keyboard simulator — interactive demo bits: selected-card outline,
+ * card create/delete/refresh animations, toast notifications, and the
+ * note editor modal (split-pane Markdown editor + live preview).
+ * ────────────────────────────────────────────────────────────────────── */
+
+.kb-card.kb-selected,
+.kb-main-card.kb-selected {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  position: relative;
+  z-index: 1
+}
+
+@keyframes kbPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(0, 212, 255, .55) }
+  100% { box-shadow: 0 0 0 12px rgba(0, 212, 255, 0) }
+}
+.kb-card.kb-pulse,
+.kb-main-card.kb-pulse { animation: kbPulse .6s ease-out }
+
+.kb-main-card[data-kb] { cursor: pointer }
+
+@keyframes kbEnter {
+  from { opacity: 0; transform: translateY(-6px) scale(.97) }
+  to   { opacity: 1; transform: none }
+}
+.kb-card.kb-enter { animation: kbEnter .28s ease both }
+
+@keyframes kbExit {
+  from { opacity: 1; max-height: 200px; margin-bottom: 1rem }
+  to   { opacity: 0; max-height: 0;     margin: 0; padding: 0 }
+}
+.kb-card.kb-exit {
+  overflow: hidden;
+  animation: kbExit .28s ease both
+}
+
+/* Toast notification — bottom-right transient feedback */
+.kb-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: .65rem 1.05rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+  font-family: var(--font-mono);
+  font-size: .85rem;
+  color: var(--text-primary);
+  z-index: 200;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .2s ease, transform .2s ease;
+  pointer-events: none
+}
+.kb-toast.open { opacity: 1; transform: none }
+.kb-toast[hidden] { display: none }
+
+/* Key-cap hover state to cue clickability — applies in both the
+   landing page grid and the cloned grid inside the '?' help modal. */
+.key-item { cursor: pointer; transition: transform .15s ease, background .15s ease }
+.key-item:hover {
+  transform: translateY(-1px);
+  background: var(--bg-card-hover)
+}
+.key-item:active { transform: translateY(0) }
+
+/* '?' help modal body: clone of .keyboard-grid sits flush against the
+   modal padding rather than carrying the section's top margin. */
+#kb-help-body .keyboard-grid { margin-top: 0 }
+
+/* ── Note editor modal ─────────────────────────────────────────────── */
+
+.note-modal-window .note-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  height: 100%
+}
+.note-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  overflow: hidden
+}
+.note-pane-head {
+  padding: .45rem .75rem;
+  font-family: var(--font-mono);
+  font-size: .8rem;
+  color: var(--branch, var(--magenta));
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-weight: 700
+}
+#note-entry {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  background: transparent;
+  color: var(--text-primary);
+  border: 0;
+  padding: .8rem;
+  font-family: var(--font-mono);
+  font-size: .9rem;
+  line-height: 1.5;
+  outline: none
+}
+#note-preview {
+  flex: 1;
+  overflow-y: auto;
+  padding: .8rem;
+  color: var(--text-primary);
+  font-size: .92rem;
+  line-height: 1.55
+}
+#note-preview h2 { font-size: 1.1rem; margin: 0 0 .5rem }
+#note-preview h3 { font-size: 1rem;   margin: .6rem 0 .35rem }
+#note-preview h4 { font-size: .92rem; margin: .5rem 0 .3rem }
+#note-preview code {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 .3rem;
+  font-family: var(--font-mono);
+  font-size: .85rem;
+  color: var(--cyan)
+}
+#note-preview ul { margin: .35rem 0 .35rem 1.2rem; padding: 0 }
+#note-preview li { margin: .15rem 0 }
+
+/* Reuse the regent-modal scaffolding for the note modal — same overlay,
+   same window chrome — but size the split area larger. */
+.note-modal-window .rgt-modal-body {
+  padding: 1rem;
+  min-height: 480px
+}
+@media (max-width: 720px) {
+  .note-modal-window .note-split {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Fake terminal modal — Matrix opening sequence easter egg.
+ *
+ * Window chrome (head / footer / borders) inherits the theme like any
+ * other modal: feels like part of the site, dark/light toggle works.
+ * Only the BODY (the actual terminal content area) is theme-locked
+ * to phosphor green on black — that's the "DOPE" bit the user wants.
+ * ────────────────────────────────────────────────────────────────────── */
+
+.term-modal-window .rgt-modal-body {
+  background: #000;
+  padding: 1.5rem 1.8rem;
+  min-height: 320px
+}
+
+.term-output {
+  margin: 0;
+  color: #00ff66;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  line-height: 1.6;
+  text-shadow: 0 0 4px rgba(0, 255, 102, .35);
+  white-space: pre-wrap;
+  word-break: break-word
+}
+
+.term-cursor {
+  display: inline-block;
+  width: .55em;
+  height: 1em;
+  background: #00ff66;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  box-shadow: 0 0 6px rgba(0, 255, 102, .6);
+  animation: termBlink 1s steps(2, end) infinite
+}
+
+@keyframes termBlink {
+  to { visibility: hidden }
+}
+
+/* Inline branch-name editor shown right after creating a card so the
+ * user can type a real name. Sized to look like the static
+ * .kb-branch span it replaces, with a thin cyan border to cue
+ * editability. */
+.kb-branch-edit {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--cyan);
+  border-radius: 4px;
+  padding: .15rem .4rem;
+  font-family: var(--font-mono);
+  font-size: .82rem;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 212, 255, .18)
+}
+.kb-branch-edit:focus { border-color: var(--cyan) }
+
+/* Horizontal "main worktree" card shown above both kanban and grid
+ * views — mirrors biomelab's GUI where the main worktree sits as a
+ * full-width card at the top of the dashboard with a thicker stroke.
+ * Decorative on the demo (not part of STATE.cards). */
+.kb-main-card {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  padding: .8rem 1.1rem;
+  margin-bottom: 1.1rem;
+  background: var(--bg-card);
+  border: 2px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  flex-wrap: wrap
+}
+.kb-main-card .kb-branch {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--magenta);
+  font-size: .92rem
+}
+.kb-main-badge {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: .68rem;
+  padding: .05rem .4rem;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .04em
+}
+.kb-main-path {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: .82rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+.kb-main-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.1rem;
+  font-family: var(--font-mono);
+  font-size: .8rem
+}
+.kb-main-meta .kb-sync,
+.kb-main-meta .kb-status {
+  color: var(--text-secondary)
+}
+.kb-main-meta .kb-sync-up { color: var(--green) }
+.kb-main-meta .kb-sync-behind { color: var(--yellow) }
+.kb-main-meta .kb-status-clean { color: var(--green) }
+
+/* Confirm dialog — narrower than other modals, body preserves the
+ * \n\n in the message text so the warning + detail line read as two
+ * paragraphs without HTML. */
+.confirm-modal-window .rgt-modal-window { width: min(480px, 92vw) }
+.confirm-modal-window .rgt-modal-body {
+  padding: 1.2rem 1.4rem;
+  color: var(--text-primary);
+  white-space: pre-line;
+  line-height: 1.5
+}
+.confirm-modal-window .rgt-modal-foot {
+  display: flex;
+  gap: .6rem;
+  justify-content: flex-end
+}
+.confirm-btn {
+  border: 0;
+  border-radius: 6px;
+  padding: .45rem .95rem;
+  font-size: .9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter .15s ease, background .15s ease
+}
+.confirm-no {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border)
+}
+.confirm-no:hover { background: var(--bg-card-hover) }
+.confirm-yes {
+  background: var(--red);
+  color: #fff
+}
+.confirm-yes:hover { filter: brightness(1.1) }
+
+/* Editor splash modal — sibling of the terminal modal. Same dark
+ * "tactile machine" body, cyan accent instead of phosphor green so
+ * the two surfaces read as different tools without diverging in
+ * aesthetic. */
+.editor-modal-window .rgt-modal-body {
+  background: #000;
+  padding: 1.5rem 1.8rem;
+  /* Pre-reserve enough height for the full boot + quote so adding
+     lines via the typewriter doesn't grow the window mid-animation. */
+  min-height: 460px
+}
+.editor-output {
+  margin: 0;
+  color: #5cf1ff;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  line-height: 1.6;
+  text-shadow: 0 0 4px rgba(92, 241, 255, .35);
+  white-space: pre-wrap;
+  word-break: break-word
+}
+.editor-output .ed-dim { color: #2a7d8d }
+.editor-output .ed-quote {
+  color: #aef5ff;
+  font-style: italic
+}
+.editor-cursor {
+  display: inline-block;
+  width: .55em;
+  height: 1em;
+  background: #5cf1ff;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  box-shadow: 0 0 6px rgba(92, 241, 255, .6);
+  animation: termBlink 1s steps(2, end) infinite
+}

@@ -53,8 +53,8 @@
         <li><a href="#dashboard">Dashboard</a></li>
         <li><a href="#sandboxes">Sandboxes</a></li>
         <li><a href="#workflow">Workflow</a></li>
+        <li><a href="#playground">Playground</a></li>
         <li><a href="#notes">Notes</a></li>
-        <li><a href="#kanban">Kanban</a></li>
         <li><a href="#install">Install</a></li>
         <li>
           <a href="https://github.com/mdelapenya/biomelab" class="nav-github" target="_blank" rel="noopener">
@@ -174,6 +174,10 @@
         <div class="feature-card"><span class="icon">🩺</span>
           <h3>System dependencies</h3>
           <p>One systray entry shows the status of every CLI biomelab uses (<code>gh</code>, <code>glab</code>, <code>sbx</code>, <code>rgt</code>) with install hints and docs — no more guessing why a feature is grey.</p>
+        </div>
+        <div class="feature-card"><span class="icon">⌨️</span>
+          <h3>Keyboard-first</h3>
+          <p>Every action is a single keystroke; full mouse support built in. Press <code>?</code> anywhere on the page for the cheatsheet.</p>
         </div>
       </div>
     </div>
@@ -339,62 +343,29 @@
     </div>
   </section>
 
-  <section id="notes" class="notes">
+  <section id="playground" class="kanban-board">
     <div class="container">
-      <span class="section-label">Task Notes</span>
-      <h2>Brief your agent, draft your PR — <span class="notes-accent">in the same place</span></h2>
-      <p class="notes-intro">A Markdown editor scoped to each worktree. Lives next to the code, mounted into the sandbox, and lands as your PR title and description when you ship.</p>
-      <div class="notes-features">
-        <div class="notes-feat-card"><span class="icon">📝</span>
-          <h3>Note next to the code</h3>
-          <p>Press <kbd>m</kbd> or right-click a card to open the editor. Single-line PR title above, multi-line Markdown body with a live preview pane.</p>
-        </div>
-        <div class="notes-feat-card"><span class="icon">🐋</span>
-          <h3>Reaches your agent</h3>
-          <p>Stored inside the worktree, so the file gets mounted into the sandbox microVM. Your agent reads your intent as an ordinary file at the working tree root.</p>
-        </div>
-        <div class="notes-feat-card"><span class="icon">🚀</span>
-          <h3>Becomes the PR</h3>
-          <p>On <kbd>P</kbd>, biomelab offers to use your prepared title and description in place of the commit-derived defaults. Skip the rewrite — the note <em>is</em> the description.</p>
-        </div>
-      </div>
-
-      <div class="notes-snippet">
-        <h4 class="snippet-title">Extension point</h4>
-        <pre><span class="notes-comment"># Any skill, agent, or script can populate the two artifact files:</span>
-&lt;worktree&gt;/.biomelab/pr-title.md      <span class="notes-comment"># single-line PR title</span>
-&lt;worktree&gt;/.biomelab/note.md          <span class="notes-comment"># PR description (Markdown)</span>
-
-<span class="notes-comment"># biomelab turns them into the actual PR on Shift+P:</span>
-gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</span> \
-             --body-file <span class="notes-arg">.biomelab/note.md</span></pre>
-        <p class="notes-snippet-foot">Write to those paths and biomelab handles the rest. Falls back to commit-derived <code>--fill</code> when files are absent.</p>
-      </div>
-    </div>
-  </section>
-
-  <section id="kanban" class="kanban-board">
-    <div class="container">
-      <span class="section-label">Kanban Board</span>
+      <span class="section-label">Playground</span>
       <h2>See every PR's lifecycle <span class="kb-accent">at a glance</span></h2>
       <p class="kanban-intro">The default view groups your worktrees into five columns — from closed PRs to merged. One keystroke switches to the flat grid and back.</p>
-      <div class="kanban-features">
-        <div class="kanban-feat-card"><span class="icon">📋</span>
-          <h3>Five lifecycle stages</h3>
-          <p>Closed Unmerged → Created → PR Sent → PR In Review → PR Merged. Branches self-sort as CI runs and reviewers respond.</p>
-        </div>
-        <div class="kanban-feat-card"><span class="icon">🔍</span>
-          <h3>Review status on every card</h3>
-          <p>Approved ✓, changes requested !, or commented ● — fetched live from GitHub reviews or GitLab approvals.</p>
-        </div>
-        <div class="kanban-feat-card"><span class="icon">⌨️</span>
-          <h3>Press <kbd>g</kbd> for grid view</h3>
-          <p>Toggle to the classic responsive card grid whenever you want a flat alphabetical view. Toggle back with <kbd>g</kbd>.</p>
-        </div>
-      </div>
-
       <div class="kanban-diagram-html">
-        <h4 class="diagram-title" id="kb-title">PR Lifecycle Board</h4>
+        <h4 class="diagram-title" id="kb-title">Try the playground · press <kbd class="kb-g-glow">c</kbd> to start</h4>
+
+        <!-- Main worktree row — always visible above both views, just
+             like biomelab's GUI shows the main worktree above the
+             linked-worktrees grid. Click selects it; r refreshes, ⏎
+             opens the terminal, l opens the log, m opens the note. -->
+        <div class="kb-main-card" data-kb="main">
+          <span class="kb-dot kb-dot-pink"></span>
+          <span class="kb-branch">main</span>
+          <span class="kb-main-badge">main</span>
+          <span class="kb-main-path">~/sourcecode/biomelab</span>
+          <span class="kb-main-meta">
+            <span class="kb-agent kb-agent-green">● claude</span>
+            <span class="kb-sync kb-sync-up">↕ up-to-date</span>
+            <span class="kb-status kb-status-clean">✓ clean</span>
+          </span>
+        </div>
 
         <div class="kb-board">
 
@@ -684,9 +655,43 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
         <div class="kb-footer-hint">
           <span class="kb-footer-mode">Try <kbd class="kb-g-glow">g</kbd> for grid view</span>
           <span class="kb-footer-sep">·</span>
-          <span class="kb-footer-cta">Click any card to see the agent conversation</span>
+          <span class="kb-footer-cta">Press <kbd class="kb-g-glow">?</kbd> to see the keybindings</span>
         </div>
       </div><!-- /.kanban-diagram-html -->
+    </div>
+  </section>
+
+  <section id="notes" class="notes">
+    <div class="container">
+      <span class="section-label">Task Notes</span>
+      <h2>Brief your agent, draft your PR — <span class="notes-accent">in the same place</span></h2>
+      <p class="notes-intro">A Markdown editor scoped to each worktree. Lives next to the code, mounted into the sandbox, and lands as your PR title and description when you ship.</p>
+      <div class="notes-features">
+        <div class="notes-feat-card"><span class="icon">📝</span>
+          <h3>Note next to the code</h3>
+          <p>Press <kbd>m</kbd> or right-click a card to open the editor. Single-line PR title above, multi-line Markdown body with a live preview pane.</p>
+        </div>
+        <div class="notes-feat-card"><span class="icon">🐋</span>
+          <h3>Reaches your agent</h3>
+          <p>Stored inside the worktree, so the file gets mounted into the sandbox microVM. Your agent reads your intent as an ordinary file at the working tree root.</p>
+        </div>
+        <div class="notes-feat-card"><span class="icon">🚀</span>
+          <h3>Becomes the PR</h3>
+          <p>On <kbd>P</kbd>, biomelab offers to use your prepared title and description in place of the commit-derived defaults. Skip the rewrite — the note <em>is</em> the description.</p>
+        </div>
+      </div>
+
+      <div class="notes-snippet">
+        <h4 class="snippet-title">Extension point</h4>
+        <pre><span class="notes-comment"># Any skill, agent, or script can populate the two artifact files:</span>
+&lt;worktree&gt;/.biomelab/pr-title.md      <span class="notes-comment"># single-line PR title</span>
+&lt;worktree&gt;/.biomelab/note.md          <span class="notes-comment"># PR description (Markdown)</span>
+
+<span class="notes-comment"># biomelab turns them into the actual PR on Shift+P:</span>
+gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</span> \
+             --body-file <span class="notes-arg">.biomelab/note.md</span></pre>
+        <p class="notes-snippet-foot">Write to those paths and biomelab handles the rest. Falls back to commit-derived <code>--fill</code> when files are absent.</p>
+      </div>
     </div>
   </section>
 
@@ -742,30 +747,6 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
     </div>
   </section>
 
-  <section class="keyboard">
-    <div class="container text-center">
-      <span class="section-label">Keyboard-First</span>
-      <h2>Point-and-click meets keyboard shortcuts</h2>
-      <p class="mx-auto">Every action is a single keystroke. Full mouse support built in.</p>
-      <div class="keyboard-grid">
-        <div class="key-item"><span class="key-cap key-green">c</span><span class="key-action">Create worktree</span></div>
-        <div class="key-item"><span class="key-cap key-red">d</span><span class="key-action">Delete worktree</span></div>
-        <div class="key-item"><span class="key-cap key-cyan">e</span><span class="key-action">Open in editor</span></div>
-        <div class="key-item"><span class="key-cap key-yellow">m</span><span class="key-action">Open note editor</span></div>
-        <div class="key-item"><span class="key-cap key-magenta">l</span><span class="key-action">Open regent log</span></div>
-        <div class="key-item"><span class="key-cap key-blue">f</span><span class="key-action">Fetch PR / MR</span></div>
-        <div class="key-item"><span class="key-cap key-cyan">g</span><span class="key-action">Toggle kanban / grid</span></div>
-        <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox</span></div>
-        <div class="key-item"><span class="key-cap key-orange">p</span><span class="key-action">Pull from remote</span></div>
-        <div class="key-item"><span class="key-cap key-magenta">P</span><span class="key-action">Send PR</span></div>
-        <div class="key-item"><span class="key-cap">r</span><span class="key-action">Refresh card</span></div>
-        <div class="key-item"><span class="key-cap key-green">s</span><span class="key-action">Start sandbox</span></div>
-        <div class="key-item"><span class="key-cap key-red">S</span><span class="key-action">Stop sandbox</span></div>
-        <div class="key-item"><span class="key-cap key-yellow">⏎</span><span class="key-action">Open in terminal</span></div>
-      </div>
-    </div>
-  </section>
-
   <section class="from-blog">
     <div class="container">
       <span class="section-label">From the blog</span>
@@ -817,11 +798,137 @@ gh pr create --title <span class="notes-arg">"$(cat .biomelab/pr-title.md)"</spa
       </header>
       <div class="rgt-modal-body"></div>
       <footer class="rgt-modal-foot">
-        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> to close · click any card to reopen</span>
+        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> to close · select a card and press <kbd>l</kbd> to reopen</span>
         <button class="rgt-modal-export">Export JSON…</button>
       </footer>
     </div>
   </div>
+
+  <!-- Note editor modal — opens via 'm' key or the m key-cap click.
+       Mirrors the GUI note editor: Markdown textarea on the left, live
+       preview on the right. Reuses the regent modal's overlay / window
+       chrome via shared classes. -->
+  <div id="note-modal" class="rgt-modal note-modal-window" hidden role="dialog" aria-modal="true" aria-labelledby="note-modal-title">
+    <div class="rgt-modal-overlay" data-note-close></div>
+    <div class="rgt-modal-window">
+      <header class="rgt-modal-head">
+        <h3 id="note-modal-title">Note</h3>
+        <button class="rgt-modal-close" data-note-close aria-label="Close">×</button>
+      </header>
+      <div class="rgt-modal-body">
+        <div class="note-split">
+          <div class="note-pane">
+            <div class="note-pane-head">✎ Markdown</div>
+            <textarea id="note-entry" spellcheck="false"></textarea>
+          </div>
+          <div class="note-pane">
+            <div class="note-pane-head">👁 Preview</div>
+            <div id="note-preview"></div>
+          </div>
+        </div>
+      </div>
+      <footer class="rgt-modal-foot">
+        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> to close · saved as <kbd>.biomelab/note.md</kbd></span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Keyboard shortcuts cheatsheet modal — opens with '?'.
+       Body is populated by cloning the .keyboard-grid section on first
+       open, so the source of truth stays in one place. -->
+  <div id="kb-help-modal" class="rgt-modal" hidden role="dialog" aria-modal="true" aria-labelledby="kb-help-title">
+    <div class="rgt-modal-overlay" data-kbhelp-close></div>
+    <div class="rgt-modal-window">
+      <header class="rgt-modal-head">
+        <h3 id="kb-help-title">Keyboard shortcuts</h3>
+        <button class="rgt-modal-close" data-kbhelp-close aria-label="Close">×</button>
+      </header>
+      <div class="rgt-modal-body" id="kb-help-body">
+        <div class="keyboard-grid">
+          <div class="key-item"><span class="key-cap key-green">c</span><span class="key-action">Create worktree</span></div>
+          <div class="key-item"><span class="key-cap key-red">d</span><span class="key-action">Delete worktree</span></div>
+          <div class="key-item"><span class="key-cap key-cyan">e</span><span class="key-action">Open in editor</span></div>
+          <div class="key-item"><span class="key-cap key-yellow">m</span><span class="key-action">Open note editor</span></div>
+          <div class="key-item"><span class="key-cap key-magenta">l</span><span class="key-action">Open regent log</span></div>
+          <div class="key-item"><span class="key-cap key-blue">f</span><span class="key-action">Fetch PR / MR</span></div>
+          <div class="key-item"><span class="key-cap key-cyan">g</span><span class="key-action">Toggle kanban / grid</span></div>
+          <div class="key-item"><span class="key-cap">n</span><span class="key-action">New sandbox</span></div>
+          <div class="key-item"><span class="key-cap key-orange">p</span><span class="key-action">Pull from remote</span></div>
+          <div class="key-item"><span class="key-cap key-magenta">P</span><span class="key-action">Send PR</span></div>
+          <div class="key-item"><span class="key-cap">r</span><span class="key-action">Refresh card</span></div>
+          <div class="key-item"><span class="key-cap key-green">s</span><span class="key-action">Start sandbox</span></div>
+          <div class="key-item"><span class="key-cap key-red">S</span><span class="key-action">Stop sandbox</span></div>
+          <div class="key-item"><span class="key-cap key-yellow">⏎</span><span class="key-action">Open in terminal</span></div>
+        </div>
+      </div>
+      <footer class="rgt-modal-foot">
+        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> or <kbd>?</kbd> to close · click any key to fire it</span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Fake terminal — opens with ⏎ on a selected card. Types out the
+       Matrix-opening lines that Neo first sees on his screen. Pure
+       easter egg / playground; the real biomelab opens a host
+       terminal. Theme-locked to phosphor-green-on-black regardless of
+       the page theme. -->
+  <div id="term-modal" class="rgt-modal term-modal-window" hidden role="dialog" aria-modal="true" aria-labelledby="term-modal-title">
+    <div class="rgt-modal-overlay" data-term-close></div>
+    <div class="rgt-modal-window">
+      <header class="rgt-modal-head">
+        <h3 id="term-modal-title">Terminal</h3>
+        <button class="rgt-modal-close" data-term-close aria-label="Close">×</button>
+      </header>
+      <div class="rgt-modal-body">
+        <pre id="term-output" class="term-output"></pre>
+      </div>
+      <footer class="rgt-modal-foot">
+        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> to close · Welcome to the Matrix</span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Editor splash — opens with 'e' on a selected card. Aspirational
+       boot sequence + a coding quote, in cyan-on-black for an "IDE
+       opening" vibe. Same chrome as the terminal modal so they read
+       as siblings. -->
+  <div id="editor-modal" class="rgt-modal editor-modal-window" hidden role="dialog" aria-modal="true" aria-labelledby="editor-modal-title">
+    <div class="rgt-modal-overlay" data-editor-close></div>
+    <div class="rgt-modal-window">
+      <header class="rgt-modal-head">
+        <h3 id="editor-modal-title">Editor</h3>
+        <button class="rgt-modal-close" data-editor-close aria-label="Close">×</button>
+      </header>
+      <div class="rgt-modal-body">
+        <pre id="editor-output" class="editor-output"></pre>
+      </div>
+      <footer class="rgt-modal-foot">
+        <span class="rgt-modal-hint">Press <kbd>Esc</kbd> to close · just code</span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Confirm dialog — mirrors biomelab's GUI (showConfirmDelete) for
+       destructive actions on a selected card. -->
+  <div id="confirm-modal" class="rgt-modal confirm-modal-window" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div class="rgt-modal-overlay" data-confirm-close></div>
+    <div class="rgt-modal-window">
+      <header class="rgt-modal-head">
+        <h3 id="confirm-modal-title">Delete worktree</h3>
+        <button class="rgt-modal-close" data-confirm-close aria-label="Close">×</button>
+      </header>
+      <div class="rgt-modal-body">
+        <p id="confirm-modal-body"></p>
+      </div>
+      <footer class="rgt-modal-foot">
+        <button class="confirm-btn confirm-no" data-confirm-close>Cancel</button>
+        <button class="confirm-btn confirm-yes">Delete</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Toast for transient feedback from keyboard simulator actions. -->
+  <div id="kb-toast" class="kb-toast" hidden role="status" aria-live="polite"></div>
 
   <script defer src="js/main.js"></script>
 </body>
