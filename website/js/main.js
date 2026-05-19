@@ -136,6 +136,30 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
   });
 });
 
+// Shared modal show/hide helpers — the open/close boilerplate
+// (toggle [hidden] / .open class, body-class for scroll-lock, the
+// 200ms fade-out before hidden) was identical across all five
+// modals on the page. The optional hooks let callers slot in the
+// only thing that actually differs per modal: setting titles /
+// populating bodies on show, cancelling typewriter timers or
+// clearing pending callbacks on hide.
+function showModal(id, onShow) {
+  var modal = document.getElementById(id);
+  if (!modal) return;
+  if (onShow) onShow(modal);
+  modal.removeAttribute('hidden');
+  document.body.classList.add('rgt-modal-open');
+  requestAnimationFrame(function () { modal.classList.add('open'); });
+}
+function hideModal(id, onHide) {
+  var modal = document.getElementById(id);
+  if (!modal) return;
+  if (onHide) onHide();
+  modal.classList.remove('open');
+  document.body.classList.remove('rgt-modal-open');
+  setTimeout(function () { modal.setAttribute('hidden', ''); }, 200);
+}
+
 // Regent activity modal — click any kanban card (works in both
 // kanban and grid views since the DOM nodes are the same) or press
 // 'l' to open a WhatsApp-style log mirroring the biomelab GUI.
@@ -149,19 +173,14 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
 
   function open(branch) {
     lastBranch = branch || lastBranch;
-    title.textContent = 'Regent activity — ' + lastBranch;
-    body.innerHTML = renderSteps(SAMPLE);
-    body.scrollTop = 0;
-    modal.removeAttribute('hidden');
-    document.body.classList.add('rgt-modal-open');
-    requestAnimationFrame(function () { modal.classList.add('open'); });
+    showModal('rgt-modal', function () {
+      title.textContent = 'Regent activity — ' + lastBranch;
+      body.innerHTML = renderSteps(SAMPLE);
+      body.scrollTop = 0;
+    });
   }
 
-  function close() {
-    modal.classList.remove('open');
-    document.body.classList.remove('rgt-modal-open');
-    setTimeout(function () { modal.setAttribute('hidden', ''); }, 200);
-  }
+  function close() { hideModal('rgt-modal'); }
 
   modal.querySelectorAll('[data-rgt-close]').forEach(function (el) {
     el.addEventListener('click', close);
@@ -340,13 +359,14 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
   }
 
   function setView(mode) {
+    // The diagram title stays as the page's inviting CTA in both
+    // views — only the layout class and the footer hint flip on the
+    // 'g' toggle.
     if (mode === 'grid') {
       diagram.classList.add('kb-view-grid');
-      title.textContent = 'Card Grid View';
       hint.innerHTML = getHintHTML('grid');
     } else {
       diagram.classList.remove('kb-view-grid');
-      title.textContent = 'PR Lifecycle Board';
       hint.innerHTML = getHintHTML('kanban');
     }
     localStorage.setItem(STORE_KEY, mode);
@@ -367,42 +387,265 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
 })();
 
 // ────────────────────────────────────────────────────────────────────
-// Keyboard simulator — make the keyboard grid an interactive demo.
-// Each key fires whether you press it on the keyboard OR click its
-// key-cap in the "Keyboard-First" grid. Real animations for the keys
-// that have visual analogues on the kanban board (c, d, r), real
-// modals for m (note editor) and l (regent log), and educational
-// toasts for the rest (e, f, n, p, P, s, S, ⏎).
+// Keyboard simulator — make the keyboard grid an interactive demo
+// backed by a shared STATE.cards source of truth. Both the kanban
+// board (columns) and the grid view (flat) render from the same
+// model, so any mutation (create, send-PR, delete) shows up
+// consistently in either view when you toggle with `g`.
 // ────────────────────────────────────────────────────────────────────
 (function () {
   var board = document.querySelector('.kanban-diagram-html');
   if (!board) return;
 
+  // ── Source of truth ────────────────────────────────────────────
+  //
+  // Each entry models one biomelab worktree card. Stage drives which
+  // kanban column it lives in; prState / ciState drive the badges.
+  // Bootstrapped from the handcrafted DOM that ships in index.html,
+  // then re-rendered from this model after every mutation.
   var STATE = {
+    cards: [],
     selectedCardId: null,
-    nextSampleN: 1
+    nextSampleN: 1,
+    mainSync: 'up' // 'up' | 'behind' — drives the main card's sync pill
   };
 
-  function findCard(id) {
-    return document.querySelector('.kb-card[data-kb="' + cssEsc(id) + '"]');
+  var STAGES = ['closed', 'created', 'sent', 'in-review', 'merged'];
+  var STAGE_LABEL = {
+    closed: 'closed', created: 'created',
+    sent: 'PR sent', 'in-review': 'in review', merged: 'merged'
+  };
+  var STAGE_DOT = {
+    closed: 'red', created: 'gray', sent: 'blue',
+    'in-review': 'yellow', merged: 'green'
+  };
+
+  function cssEsc(s) { return String(s).replace(/[\\"]/g, '\\$&'); }
+
+  // ── Parse initial DOM into STATE.cards ─────────────────────────
+
+  function stageOfCol(col) {
+    var cl = col.className;
+    if (/kb-col-closed/.test(cl))    return 'closed';
+    if (/kb-col-created/.test(cl))   return 'created';
+    if (/kb-col-sent/.test(cl))      return 'sent';
+    if (/kb-col-in-review/.test(cl)) return 'in-review';
+    if (/kb-col-merged/.test(cl))    return 'merged';
+    return 'created';
   }
-  function cssEsc(s) {
-    return String(s).replace(/[\\"]/g, '\\$&');
+
+  function parseCard(el, stage) {
+    var agent = null;
+    var ag = el.querySelector('.kb-agent');
+    if (ag && !ag.classList.contains('kb-agent-dim')) {
+      agent = ag.textContent.replace(/[●○]\s*/g, '').trim() || null;
+    }
+    var prNumber = null, prState = null, ciState = null;
+    var prNum = el.querySelector('.kb-pr-num');
+    if (prNum) prNumber = parseInt(prNum.textContent.replace('#', ''), 10) || null;
+    var stateSpan = el.querySelector('[class*="kb-pr-state-"]');
+    if (stateSpan) {
+      var ms = stateSpan.className.match(/kb-pr-state-(\w+)/);
+      if (ms) prState = ms[1];
+    }
+    var ci = el.querySelector('[class*="kb-ci-"]:not(.kb-ci-empty)');
+    if (ci) {
+      var mc = ci.className.match(/kb-ci-(\w+)/);
+      if (mc) ciState = mc[1];
+    }
+    return {
+      id: el.dataset.kb,
+      branch: el.dataset.kb,
+      agent: agent,
+      prNumber: prNumber,
+      prState: prState,
+      ciState: ciState,
+      stage: stage
+    };
+  }
+
+  function parseInitialState() {
+    var cards = [];
+    document.querySelectorAll('.kb-board .kb-col .kb-card[data-kb]').forEach(function (el) {
+      var col = el.closest('.kb-col');
+      if (!col) return;
+      cards.push(parseCard(el, stageOfCol(col)));
+    });
+    return cards;
+  }
+
+  // ── Render board + grid from STATE.cards ───────────────────────
+
+  function cardHTML(c, mode) {
+    var dot = (c.prState === 'draft') ? 'dim' : (STAGE_DOT[c.stage] || 'gray');
+    var draftClass = (c.prState === 'draft') ? ' kb-card-draft' : '';
+    var closedClass = (c.stage === 'closed') ? ' kb-card-closed' : '';
+    var branchDim = (c.prState === 'draft') ? ' kb-branch-dim' : '';
+
+    var top = '<div class="kb-card-top">'
+      + '<span class="kb-dot kb-dot-' + dot + '"></span>';
+    if (c.editing) {
+      // Inline-edit branch name: replaces the static span with a text
+      // input until the user commits with Enter (or blur). Esc cancels
+      // and removes the half-created card.
+      top += '<input class="kb-branch-edit" value="' + esc(c.branch) + '" spellcheck="false">';
+    } else {
+      top += '<span class="kb-branch' + branchDim + '">' + esc(c.branch) + '</span>';
+    }
+    if (mode === 'grid') {
+      top += '<span class="kb-stage-pill kb-stage-' + c.stage + '">'
+        + esc(STAGE_LABEL[c.stage] || c.stage) + '</span>';
+    }
+    top += '</div>';
+
+    var meta = '<div class="kb-card-meta">'
+      + (c.agent
+          ? '<span class="kb-agent kb-agent-green">● ' + esc(c.agent) + '</span>'
+          : '<span class="kb-agent kb-agent-dim">○ no agent</span>')
+      + '</div>';
+
+    var status = '<div class="kb-card-status">';
+    if (c.prNumber) {
+      var ps = c.prState || 'open';
+      status += '<span class="kb-pr-label">PR <span class="kb-pr-num">#' + c.prNumber + '</span> '
+        + '<span class="kb-pr-state-' + ps + '">' + esc(ps) + '</span></span>';
+      if (c.ciState) {
+        var icon = c.ciState === 'pass' ? '✓' : c.ciState === 'fail' ? '✗' : '●';
+        var title = c.ciState === 'pass' ? 'CI passed' : c.ciState === 'fail' ? 'CI failed' : 'CI pending';
+        status += '<span class="kb-ci kb-ci-' + c.ciState + '" title="' + title + '">' + icon + '</span>';
+      }
+    } else {
+      status += '<span class="kb-no-pr">no PR</span>';
+    }
+    status += '</div>';
+
+    return '<div class="kb-card' + closedClass + draftClass + '" data-kb="' + esc(c.id) + '">'
+      + top + meta + status + '</div>';
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
+
+  function renderBoard() {
+    STAGES.forEach(function (stage) {
+      var col = document.querySelector('.kb-col-' + stage);
+      if (!col) return;
+      col.querySelectorAll('.kb-card').forEach(function (c) { c.remove(); });
+      var inStage = STATE.cards.filter(function (c) { return c.stage === stage; });
+      inStage.forEach(function (c) {
+        col.insertAdjacentHTML('beforeend', cardHTML(c, 'board'));
+      });
+      var badge = col.querySelector('.kb-col-badge');
+      if (badge) badge.textContent = String(inStage.length);
+    });
+  }
+
+  function renderGrid() {
+    var grid = document.querySelector('.kb-grid');
+    if (!grid) return;
+    grid.querySelectorAll('.kb-card').forEach(function (c) { c.remove(); });
+    STATE.cards.forEach(function (c) {
+      grid.insertAdjacentHTML('beforeend', cardHTML(c, 'grid'));
+    });
+  }
+
+  function renderAll() {
+    renderBoard();
+    renderGrid();
+    document.querySelectorAll('.kb-card[data-kb]').forEach(wireCard);
+    if (STATE.selectedCardId) applySelection(STATE.selectedCardId);
+  }
+
+  // ── Selection ──────────────────────────────────────────────────
+
+  function applySelection(id) {
+    document.querySelectorAll('.kb-selected').forEach(function (el) {
+      el.classList.remove('kb-selected');
+    });
+    if (!id) return;
+    document.querySelectorAll('[data-kb="' + cssEsc(id) + '"]').forEach(function (el) {
+      el.classList.add('kb-selected');
+    });
   }
 
   function selectCard(id) {
-    document.querySelectorAll('.kb-card.kb-selected').forEach(function (el) {
-      el.classList.remove('kb-selected');
-    });
-    if (id) {
-      var c = findCard(id);
-      if (c) c.classList.add('kb-selected');
-    }
     STATE.selectedCardId = id;
+    applySelection(id);
   }
 
-  // Toast — bottom-right transient feedback for actions that don't
-  // have a visual analogue on the board.
+  function getCard(id) {
+    for (var i = 0; i < STATE.cards.length; i++) {
+      if (STATE.cards[i].id === id) return STATE.cards[i];
+    }
+    return null;
+  }
+
+  function pulseCard(id) {
+    document.querySelectorAll('[data-kb="' + cssEsc(id) + '"]').forEach(function (el) {
+      el.classList.add('kb-pulse');
+      setTimeout(function () { el.classList.remove('kb-pulse'); }, 620);
+    });
+  }
+
+  // ── Main worktree sync cycle ───────────────────────────────────
+  //
+  // Every 5 s the main card drifts to "behind" so the user has a
+  // genuine reason to press 'p'. Pulling sets it back to "up-to-date"
+  // and restarts the timer so the next drift happens 5 s from the
+  // pull (not mid-toast). The number-behind is a fixed demo value;
+  // in the real app it'd come from `git rev-list --count
+  // origin/main..HEAD`.
+  var MAIN_DRIFT_MS = 5000;
+  var mainSyncTimer = null;
+
+  function setMainSync(state) {
+    STATE.mainSync = state;
+    var syncEl = document.querySelector('.kb-main-card .kb-sync');
+    if (!syncEl) return;
+    syncEl.classList.remove('kb-sync-up', 'kb-sync-behind');
+    if (state === 'behind') {
+      // Random 1-5: keeps the demo feeling alive each cycle instead of
+      // always showing the same number.
+      var n = Math.floor(Math.random() * 5) + 1;
+      syncEl.classList.add('kb-sync-behind');
+      syncEl.textContent = '↓ ' + n + ' behind';
+    } else {
+      syncEl.classList.add('kb-sync-up');
+      syncEl.textContent = '↕ up-to-date';
+    }
+    pulseCard('main');
+  }
+
+  function startMainSyncCycle() {
+    if (mainSyncTimer) clearInterval(mainSyncTimer);
+    mainSyncTimer = setInterval(function () {
+      if (STATE.mainSync === 'up') setMainSync('behind');
+    }, MAIN_DRIFT_MS);
+  }
+
+  function pullMain() {
+    if (STATE.mainSync === 'up') {
+      showToast('Main already up-to-date');
+      return;
+    }
+    showToast('Pulling from remote…');
+    // Flip the sync pill to "up-to-date" only when the toast finishes,
+    // so the UI shows a real "pulling" window — the toast is the
+    // progress indicator, and the green state lands as it fades out.
+    // The follow-up startMainSyncCycle restart pushes the next drift
+    // a fresh interval away from THIS moment.
+    setTimeout(function () {
+      setMainSync('up');
+      startMainSyncCycle();
+    }, TOAST_VISIBLE_MS);
+  }
+
+  // ── Toast — bottom-right transient feedback ────────────────────
+
+  var TOAST_VISIBLE_MS = 1700;
   var toast = document.getElementById('kb-toast');
   var toastTimer = null;
   function showToast(msg) {
@@ -414,58 +657,128 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
     toastTimer = setTimeout(function () {
       toast.classList.remove('open');
       setTimeout(function () { toast.setAttribute('hidden', ''); }, 220);
-    }, 1700);
+    }, TOAST_VISIBLE_MS);
   }
 
   // ── Actions ────────────────────────────────────────────────────
 
   function createCard() {
-    var col = document.querySelector('.kb-col-created');
-    if (!col) return;
     var n = STATE.nextSampleN++;
     var branch = 'feat/demo-' + n;
-    var card = document.createElement('div');
-    card.className = 'kb-card kb-enter';
-    card.dataset.kb = branch;
-    card.innerHTML =
-      '<div class="kb-card-top">'
-      + '<span class="kb-dot kb-dot-gray"></span>'
-      + '<span class="kb-branch">' + branch + '</span>'
-      + '</div>'
-      + '<div class="kb-card-meta"><span class="kb-agent kb-agent-green">● claude</span></div>'
-      + '<div class="kb-card-status"><span class="kb-no-pr">no PR</span></div>';
-    col.appendChild(card);
-    wireCard(card);
-    // Bump the column count badge if present
-    var badge = col.querySelector('.kb-col-badge');
-    if (badge) badge.textContent = String(parseInt(badge.textContent || '0', 10) + 1);
-    selectCard(branch);
-    showToast('Created worktree: ' + branch);
-    setTimeout(function () { card.classList.remove('kb-enter'); }, 280);
+    STATE.cards.push({
+      id: branch, branch: branch, agent: 'claude',
+      prNumber: null, prState: null, ciState: null,
+      stage: 'created',
+      editing: true
+    });
+    STATE.selectedCardId = branch;
+    renderAll();
+    pulseCard(branch);
+    focusBranchEdit(branch);
+    showToast('Name your worktree · Enter to confirm');
+  }
+
+  // focusBranchEdit puts the cursor in the inline branch input of the
+  // just-created card so the user can type a real name immediately.
+  // Enter commits + leaves editing mode; Esc cancels and removes the
+  // card; blur also commits (clicking elsewhere). selectionStart/End
+  // place the caret at the end so users can append-or-overwrite at will.
+  function focusBranchEdit(currentId) {
+    var input = document.querySelector('.kb-card[data-kb="' + cssEsc(currentId) + '"] .kb-branch-edit');
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(0, input.value.length); // select-all for easy overwrite
+
+    var committed = false;
+    function commit() {
+      if (committed) return;
+      committed = true;
+      var newName = input.value.trim();
+      var card = getCard(currentId);
+      if (!card) return;
+      if (!newName) {
+        // Empty name → treat as cancel and drop the card.
+        STATE.cards = STATE.cards.filter(function (c) { return c.id !== currentId; });
+        STATE.selectedCardId = null;
+        renderAll();
+        return;
+      }
+      // Update id + branch. selectedCardId follows the rename so
+      // subsequent d/m/l/P still target this card.
+      card.id = newName;
+      card.branch = newName;
+      card.editing = false;
+      STATE.selectedCardId = newName;
+      renderAll();
+      pulseCard(newName);
+    }
+    function cancel() {
+      if (committed) return;
+      committed = true;
+      STATE.cards = STATE.cards.filter(function (c) { return c.id !== currentId; });
+      STATE.selectedCardId = null;
+      renderAll();
+    }
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener('blur', commit);
   }
 
   function deleteCard() {
     if (!STATE.selectedCardId) { showToast('Select a card first (click one)'); return; }
-    var c = findCard(STATE.selectedCardId);
-    if (!c) return;
-    showToast('Deleted worktree: ' + STATE.selectedCardId);
-    var col = c.closest('.kb-col');
-    c.classList.add('kb-exit');
-    setTimeout(function () {
-      c.remove();
-      if (col) {
-        var badge = col.querySelector('.kb-col-badge');
-        if (badge) {
-          var n = parseInt(badge.textContent || '0', 10) - 1;
-          badge.textContent = String(Math.max(n, 0));
-        }
+    if (STATE.selectedCardId === 'main') {
+      showToast('Cannot delete the main worktree');
+      return;
+    }
+    var id = STATE.selectedCardId;
+    openConfirmModal(
+      'Delete worktree',
+      "Delete worktree '" + id + "'?\n\nThis removes the directory, branch, and metadata.",
+      'Delete',
+      function () {
+        STATE.cards = STATE.cards.filter(function (c) { return c.id !== id; });
+        STATE.selectedCardId = null;
+        renderAll();
+        showToast('Deleted worktree: ' + id);
       }
-    }, 280);
-    selectCard(null);
+    );
+  }
+
+  // sendPR: only valid on cards in 'created'. Assigns a fresh PR
+  // number, sets prState/ciState to open/pending, and moves the card
+  // to the 'sent' column. Both views re-render so the transition is
+  // visible whether the user is on kanban or grid.
+  function sendPR() {
+    if (!STATE.selectedCardId) { showToast('Select a card first (click one)'); return; }
+    if (STATE.selectedCardId === 'main') {
+      showToast('Main is the parent worktree — no PR flow');
+      return;
+    }
+    var card = getCard(STATE.selectedCardId);
+    if (!card) return;
+    if (card.stage !== 'created') {
+      showToast('Send PR only works on cards in Created');
+      return;
+    }
+    card.prNumber = nextPRNumber();
+    card.prState = 'open';
+    card.ciState = 'pending';
+    card.stage = 'sent';
+    renderAll();
+    pulseCard(card.id);
+    showToast('Pushed branch · opened PR #' + card.prNumber);
+  }
+
+  function nextPRNumber() {
+    var max = 0;
+    STATE.cards.forEach(function (c) { if (c.prNumber && c.prNumber > max) max = c.prNumber; });
+    return max + 1;
   }
 
   function refreshAll() {
-    document.querySelectorAll('.kb-card').forEach(function (c) {
+    document.querySelectorAll('.kb-card, .kb-main-card').forEach(function (c) {
       c.classList.add('kb-pulse');
       setTimeout(function () { c.classList.remove('kb-pulse'); }, 620);
     });
@@ -481,32 +794,189 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
 
   function openNoteModal() {
     if (!STATE.selectedCardId) { showToast('Select a card first (click one)'); return; }
-    var modal = document.getElementById('note-modal');
-    if (!modal) return;
-    document.getElementById('note-modal-title').textContent = 'Note — ' + STATE.selectedCardId;
-    var entry = document.getElementById('note-entry');
-    var preview = document.getElementById('note-preview');
-    var sample =
-      '# ' + STATE.selectedCardId + '\n\n'
-      + '**TODO** — write the task description here.\n\n'
-      + '- Use *Markdown* — bold, italic, `inline code`\n'
-      + '- Live preview on the right →\n'
-      + '- Saved alongside the worktree as `.biomelab/note.md`\n\n'
-      + 'When you `Shift+P` to send the PR, biomelab uses this note as the body.';
-    entry.value = sample;
-    preview.innerHTML = renderMd(sample);
-    entry.oninput = function () { preview.innerHTML = renderMd(entry.value); };
-    modal.removeAttribute('hidden');
-    document.body.classList.add('rgt-modal-open');
-    requestAnimationFrame(function () { modal.classList.add('open'); });
+    showModal('note-modal', function () {
+      document.getElementById('note-modal-title').textContent = 'Note — ' + STATE.selectedCardId;
+      var entry = document.getElementById('note-entry');
+      var preview = document.getElementById('note-preview');
+      var sample =
+        '# ' + STATE.selectedCardId + '\n\n'
+        + '**TODO** — write the task description here.\n\n'
+        + '- Use *Markdown* — bold, italic, `inline code`\n'
+        + '- Live preview on the right →\n'
+        + '- Saved alongside the worktree as `.biomelab/note.md`\n\n'
+        + 'When you `Shift+P` to send the PR, biomelab uses this note as the body.';
+      entry.value = sample;
+      preview.innerHTML = renderMd(sample);
+      entry.oninput = function () { preview.innerHTML = renderMd(entry.value); };
+    });
   }
 
-  function closeNoteModal() {
-    var modal = document.getElementById('note-modal');
-    if (!modal) return;
-    modal.classList.remove('open');
-    document.body.classList.remove('rgt-modal-open');
-    setTimeout(function () { modal.setAttribute('hidden', ''); }, 200);
+  function closeNoteModal() { hideModal('note-modal'); }
+
+  // ── '?' keyboard shortcuts modal ──────────────────────────────
+  //
+  // The .keyboard-grid lives inside this modal (single source of
+  // truth — the standalone landing-page section was removed in favor
+  // of the modal-only flow). Toggle behavior on '?': open if closed,
+  // close if open. Esc also closes.
+  function openHelpModal()  { showModal('kb-help-modal'); }
+  function closeHelpModal() { hideModal('kb-help-modal'); }
+
+  // ── Confirm dialog ─────────────────────────────────────────────
+  //
+  // Generic Yes/No prompt mirroring biomelab's showConfirmDelete.
+  // openConfirmModal stores the success callback in pendingConfirm;
+  // confirmYes invokes it, anything else (Cancel / Esc / overlay
+  // click / ×) just closes without firing.
+  var pendingConfirm = null;
+  function openConfirmModal(title, message, yesLabel, onYes) {
+    pendingConfirm = onYes || null;
+    showModal('confirm-modal', function () {
+      document.getElementById('confirm-modal-title').textContent = title;
+      document.getElementById('confirm-modal-body').textContent = message;
+      var yesBtn = document.querySelector('.confirm-yes');
+      if (yesBtn && yesLabel) yesBtn.textContent = yesLabel;
+    });
+  }
+  function closeConfirmModal() {
+    hideModal('confirm-modal', function () { pendingConfirm = null; });
+  }
+  function confirmYes() {
+    var fn = pendingConfirm;
+    pendingConfirm = null;
+    closeConfirmModal();
+    if (fn) fn();
+  }
+
+  // ── Fake terminal (Matrix opening) ─────────────────────────────
+  //
+  // Opens on Enter (or ⏎ cap click) when a card is selected. Types
+  // out the iconic Matrix intro lines character-by-character. Purely
+  // playful — the real biomelab opens a host Terminal window.
+
+  var TERM_LINES = [
+    'Wake up, Neo...',
+    'The Matrix has you...',
+    'Follow the white rabbit.',
+    '',
+    'Knock, knock, Neo.'
+  ];
+  var termTimer = null;
+
+  function openTerminalModal() {
+    showModal('term-modal', function () {
+      document.getElementById('term-modal-title').textContent =
+        STATE.selectedCardId ? 'Terminal — ' + STATE.selectedCardId : 'Terminal';
+      var out = document.getElementById('term-output');
+      if (termTimer) clearTimeout(termTimer);
+      if (out) out.innerHTML = '<span class="term-cursor"></span>';
+    });
+    // Brief pause before typing starts — mimics the moment of stillness
+    // right before the lines start landing in Neo's screen.
+    termTimer = setTimeout(typeMatrixIntro, 600);
+  }
+
+  function closeTerminalModal() {
+    hideModal('term-modal', function () {
+      if (termTimer) { clearTimeout(termTimer); termTimer = null; }
+    });
+  }
+
+  // ── Editor splash (cyan sibling of the Matrix terminal) ────────
+  //
+  // Opens on 'e'. Aspirational rather than functional — a brief boot
+  // sequence and a coding quote, typed out like the Matrix lines but
+  // tinted cyan to read as a different surface. The selected card's
+  // branch threads into the path so the splash feels card-specific.
+
+  var editorTimer = null;
+
+  function openEditorModal() {
+    var branch = STATE.selectedCardId || 'main';
+    showModal('editor-modal', function () {
+      document.getElementById('editor-modal-title').textContent = 'Editor — ' + branch;
+      var out = document.getElementById('editor-output');
+      if (editorTimer) clearTimeout(editorTimer);
+      if (out) out.innerHTML = '<span class="editor-cursor"></span>';
+    });
+    editorTimer = setTimeout(function () { typeEditorSplash(branch); }, 450);
+  }
+
+  function closeEditorModal() {
+    hideModal('editor-modal', function () {
+      if (editorTimer) { clearTimeout(editorTimer); editorTimer = null; }
+    });
+  }
+
+  function typeEditorSplash(branch) {
+    var out = document.getElementById('editor-output');
+    if (!out) return;
+    // Mixed segments: plain typed lines + a pre-rendered quote block
+    // that fades in after the boot lines finish. Keeping the segments
+    // in one array means the typewriter handles ordering / timing.
+    var bootLines = [
+      '$ code .',
+      '',
+      '  Indexing workspace…',
+      '  142 files loaded.',
+      '  Spawning language servers…',
+      '  Ready.',
+      '',
+      '  Today\'s canvas: ' + branch
+    ];
+    var quote = '\n\n  "Talk is cheap.\n   Show me the code."\n\n        — Linus Torvalds, LKML 2000';
+
+    var li = 0, ci = 0, typed = '';
+    function step() {
+      if (li >= bootLines.length) {
+        // Boot finished — drop the quote in one beat for emphasis.
+        typed += quote;
+        out.innerHTML = esc(typed) + '<span class="editor-cursor"></span>';
+        return;
+      }
+      var line = bootLines[li];
+      if (ci < line.length) {
+        typed += line.charAt(ci);
+        ci++;
+        out.innerHTML = esc(typed) + '<span class="editor-cursor"></span>';
+        editorTimer = setTimeout(step, 28 + Math.random() * 30);
+      } else {
+        typed += '\n';
+        li++;
+        ci = 0;
+        out.innerHTML = esc(typed) + '<span class="editor-cursor"></span>';
+        editorTimer = setTimeout(step, 180);
+      }
+    }
+    step();
+  }
+
+  function typeMatrixIntro() {
+    var out = document.getElementById('term-output');
+    if (!out) return;
+    var li = 0, ci = 0, typed = '';
+    function step() {
+      if (li >= TERM_LINES.length) {
+        // All lines typed — leave the cursor blinking at the end.
+        out.innerHTML = esc(typed) + '<span class="term-cursor"></span>';
+        return;
+      }
+      var line = TERM_LINES[li];
+      if (ci < line.length) {
+        typed += line.charAt(ci);
+        ci++;
+        out.innerHTML = esc(typed) + '<span class="term-cursor"></span>';
+        // Slight jitter so the typing feels human, not metronomic.
+        termTimer = setTimeout(step, 55 + Math.random() * 50);
+      } else {
+        typed += '\n';
+        li++;
+        ci = 0;
+        out.innerHTML = esc(typed) + '<span class="term-cursor"></span>';
+        termTimer = setTimeout(step, 1100);
+      }
+    }
+    step();
   }
 
   function renderMd(s) {
@@ -543,13 +1013,42 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
   document.addEventListener('keydown', function (e) {
     var tag = document.activeElement && document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    var rgtModal = document.getElementById('rgt-modal');
-    var noteModal = document.getElementById('note-modal');
+    var rgtModal     = document.getElementById('rgt-modal');
+    var noteModal    = document.getElementById('note-modal');
+    var helpModal    = document.getElementById('kb-help-modal');
+    var termModal    = document.getElementById('term-modal');
+    var editorModal  = document.getElementById('editor-modal');
+    var confirmModal = document.getElementById('confirm-modal');
     if (rgtModal && !rgtModal.hasAttribute('hidden')) return;
     if (noteModal && !noteModal.hasAttribute('hidden')) {
       if (e.key === 'Escape') closeNoteModal();
       return;
     }
+    if (helpModal && !helpModal.hasAttribute('hidden')) {
+      // Toggle off: Esc or another '?' closes the cheatsheet.
+      if (e.key === 'Escape' || e.key === '?') {
+        closeHelpModal();
+        e.preventDefault();
+      }
+      return;
+    }
+    if (termModal && !termModal.hasAttribute('hidden')) {
+      if (e.key === 'Escape') closeTerminalModal();
+      return;
+    }
+    if (editorModal && !editorModal.hasAttribute('hidden')) {
+      if (e.key === 'Escape') closeEditorModal();
+      return;
+    }
+    if (confirmModal && !confirmModal.hasAttribute('hidden')) {
+      // Esc = Cancel · Enter = Confirm. Other keys are swallowed so
+      // the user can't accidentally trigger a card action while the
+      // dialog is in front.
+      if (e.key === 'Escape') { closeConfirmModal(); e.preventDefault(); }
+      else if (e.key === 'Enter') { confirmYes(); e.preventDefault(); }
+      return;
+    }
+    if (e.key === '?') { openHelpModal(); e.preventDefault(); return; }
 
     switch (e.key) {
       case 'c': case 'C': createCard();      e.preventDefault(); break;
@@ -559,14 +1058,23 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
       case 'l': case 'L': openLogModal();    e.preventDefault(); break;
       // Toast-only actions (educational reactions for keys without
       // their own animation on the demo board)
-      case 'e': showToast('Opening worktree in editor…');             e.preventDefault(); break;
+      case 'e':
+        if (STATE.selectedCardId) { openEditorModal(); e.preventDefault(); }
+        else showToast('Select a card first (click one)');
+        break;
       case 'f': showToast('Fetching PR into a new worktree…');        e.preventDefault(); break;
       case 'n': showToast('Creating sandbox for this worktree…');     e.preventDefault(); break;
-      case 'p': showToast('Pulling from remote…');                    e.preventDefault(); break;
-      case 'P': showToast('Send PR flow (multi-step in the app)');    e.preventDefault(); break;
+      case 'p':
+        if (STATE.selectedCardId === 'main') pullMain();
+        else showToast('Pulling from remote…');
+        e.preventDefault();
+        break;
+      case 'P': sendPR();                                              e.preventDefault(); break;
       case 's': showToast('Starting stopped sandbox…');               e.preventDefault(); break;
       case 'S': showToast('Stopping running sandbox…');               e.preventDefault(); break;
-      case 'Enter': showToast('Opening terminal for this worktree…'); e.preventDefault(); break;
+      case 'Enter':
+        if (STATE.selectedCardId) { openTerminalModal(); e.preventDefault(); }
+        break;
     }
   });
 
@@ -579,14 +1087,23 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
       case 'r': refreshAll(); return;
       case 'm': openNoteModal(); return;
       case 'l': openLogModal(); return;
-      case 'e': showToast('Opening worktree in editor…'); return;
+      case 'e':
+        if (STATE.selectedCardId) openEditorModal();
+        else showToast('Select a card first (click one)');
+        return;
       case 'f': showToast('Fetching PR into a new worktree…'); return;
       case 'n': showToast('Creating sandbox for this worktree…'); return;
-      case 'p': showToast('Pulling from remote…'); return;
-      case 'P': showToast('Send PR flow (multi-step in the app)'); return;
+      case 'p':
+        if (STATE.selectedCardId === 'main') pullMain();
+        else showToast('Pulling from remote…');
+        return;
+      case 'P': sendPR(); return;
       case 's': showToast('Starting stopped sandbox…'); return;
       case 'S': showToast('Stopping running sandbox…'); return;
-      case '⏎': showToast('Opening terminal for this worktree…'); return;
+      case '⏎':
+        if (STATE.selectedCardId) openTerminalModal();
+        else showToast('Select a card first (click one)');
+        return;
       case 'g':
         // Delegate to the existing kanban toggle by dispatching a
         // keyboard event the toggle IIFE already listens for.
@@ -594,19 +1111,29 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
         return;
     }
   }
-  document.querySelectorAll('.keyboard-grid .key-item').forEach(function (item) {
+  // Delegate so both the page-load key-items AND the clones inside the
+  // '?' help modal trigger the same actions.
+  document.addEventListener('click', function (e) {
+    var item = e.target.closest('.key-item');
+    if (!item) return;
     var cap = item.querySelector('.key-cap');
     if (!cap) return;
-    item.style.cursor = 'pointer';
-    item.addEventListener('click', function () {
-      fireByCap(cap.textContent.trim());
-    });
+    fireByCap(cap.textContent.trim());
   });
 
-  // ── Note modal close handlers ──────────────────────────────────
-
-  document.querySelectorAll('[data-note-close]').forEach(function (el) {
-    el.addEventListener('click', closeNoteModal);
+  // ── Modal close handlers (delegated) ───────────────────────────
+  //
+  // Delegate clicks on data-{kind}-close targets to document so the
+  // bindings survive any markup tweaks and work for nested overlays
+  // / buttons without per-element wiring. One listener replaces three
+  // per-element registrations.
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('[data-note-close]'))    { closeNoteModal();    return; }
+    if (e.target.closest('[data-kbhelp-close]'))  { closeHelpModal();    return; }
+    if (e.target.closest('[data-term-close]'))    { closeTerminalModal(); return; }
+    if (e.target.closest('[data-editor-close]'))  { closeEditorModal();  return; }
+    if (e.target.closest('[data-confirm-close]')) { closeConfirmModal(); return; }
+    if (e.target.closest('.confirm-yes'))         { confirmYes();        return; }
   });
   // Esc while typing in the textarea: the global keydown handler bows
   // out on TEXTAREA focus, so add a dedicated Escape on the entry so
@@ -620,4 +1147,26 @@ document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
       }
     });
   }
+
+  // ── Bootstrap STATE from the initial handcrafted DOM ───────────
+  //
+  // The page ships a static kanban + grid layout for first paint /
+  // SEO. We parse it once into STATE.cards on init so subsequent
+  // mutations (create, send-PR, delete) flow through one source of
+  // truth and re-render both views. The grid view is wired here too —
+  // its initial DOM is replaced by render so the two views are always
+  // in sync, including for hand-authored cards that may have drifted
+  // between the two markup blocks in index.html.
+  STATE.cards = parseInitialState();
+  renderAll();
+
+  // Wire the static main worktree card once. It's NOT in STATE.cards
+  // (it doesn't live in a column or the grid), so renderAll never
+  // touches it — a single binding here is enough.
+  var mainCardEl = document.querySelector('.kb-main-card[data-kb]');
+  if (mainCardEl) wireCard(mainCardEl);
+
+  // Kick off the periodic sync drift so the main card flips to
+  // "behind" every 10 s and the user has a real reason to try 'p'.
+  startMainSyncCycle();
 })();
